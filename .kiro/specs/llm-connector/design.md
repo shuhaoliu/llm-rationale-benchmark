@@ -15,7 +15,6 @@ graph TB
     
     Config --> Loader[Config Loader]
     Config --> Validator[Config Validator]
-    Config --> Merger[Config Merger]
     
     LLMClient --> Factory[Provider Factory]
     Factory --> OpenAI[OpenAI Provider]
@@ -28,7 +27,6 @@ graph TB
     Gemini --> HTTPClient
     OpenRouter --> HTTPClient
     
-    HTTPClient --> RateLimit[Rate Limiter]
     HTTPClient --> Retry[Retry Handler]
 ```
 
@@ -42,7 +40,7 @@ rationale_benchmark/llm/
 ├── client.py              # Main LLM client interface
 ├── config/
 │   ├── __init__.py
-│   ├── loader.py          # Configuration loading and merging
+│   ├── loader.py          # Configuration loading
 │   ├── validator.py       # Configuration validation
 │   └── models.py          # Configuration data models
 ├── providers/
@@ -55,7 +53,6 @@ rationale_benchmark/llm/
 ├── http/
 │   ├── __init__.py
 │   ├── client.py          # HTTP client with connection pooling
-│   ├── rate_limiter.py    # Rate limiting implementation
 │   └── retry.py           # Retry logic with exponential backoff
 └── exceptions.py          # Custom exception classes
 ```
@@ -86,8 +83,8 @@ class LLMConfig:
   providers: Dict[str, ProviderConfig]
   
   @classmethod
-  def from_files(cls, config_dir: Path, config_name: str = "default-llms") -> "LLMConfig":
-    """Load and merge configuration from files."""
+  def from_file(cls, config_dir: Path, config_name: str = "default-llms") -> "LLMConfig":
+    """Load configuration from a single file."""
     pass
 
 @dataclass
@@ -119,18 +116,22 @@ class ModelResponse:
 
 ```python
 class ConfigLoader:
-  """Handles loading and merging of LLM configuration files."""
+  """Handles loading of LLM configuration files."""
   
   def __init__(self, config_dir: Path):
     self.config_dir = config_dir
   
   def load_config(self, config_name: str) -> LLMConfig:
-    """Load configuration with default merging."""
-    default_config = self._load_default_config()
-    if config_name != "default-llms":
-      custom_config = self._load_custom_config(config_name)
-      return self._merge_configs(default_config, custom_config)
-    return default_config
+    """Load configuration from specified file."""
+    config_file = self.config_dir / f"{config_name}.yaml"
+    if not config_file.exists():
+      raise ConfigurationError(f"Configuration file not found: {config_file}")
+    
+    with open(config_file, 'r') as f:
+      config_dict = yaml.safe_load(f)
+    
+    resolved_config = self._resolve_environment_variables(config_dict)
+    return LLMConfig.from_dict(resolved_config)
   
   def list_available_configs(self) -> List[str]:
     """List all available configuration files."""
@@ -206,34 +207,340 @@ class LLMProvider(ABC):
 
 #### Provider Implementations
 
-Each provider implements the abstract interface with provider-specific logic:
+Each provider implements the abstract interface with provider-specific logic, ensuring no streaming support and comprehensive response validation:
 
 ```python
 class OpenAIProvider(LLMProvider):
-  """OpenAI API provider implementation."""
+  """OpenAI API provider implementation with structured output validation."""
   
   def __init__(self, config: ProviderConfig, http_client: HTTPClient):
     super().__init__(config, http_client)
     self.base_url = config.base_url or "https://api.openai.com/v1"
   
   async def generate_response(self, request: ModelRequest) -> ModelResponse:
-    """Generate response using OpenAI API."""
+    """Generate response using OpenAI API with no streaming and strict validation."""
     headers = {
       "Authorization": f"Bearer {self.config.api_key}",
       "Content-Type": "application/json"
     }
     
     payload = self._prepare_request(request)
+    # Explicitly disable streaming - this is critical
+    payload["stream"] = False
+    
     start_time = time.time()
     
-    response = await self.http_client.post(
-      f"{self.base_url}/chat/completions",
-      json=payload,
-      headers=headers
-    )
+    try:
+      response = await self.http_client.post(
+        f"{self.base_url}/chat/completions",
+        json=payload,
+        headers=headers
+      )
+      
+      if response.status != 200:
+        raise ProviderError("openai", f"API request failed with status {response.status}")
+      
+      response_data = response.json()
+      
+    except Exception as e:
+      raise ProviderError("openai", f"Request failed: {str(e)}", e)
     
     latency_ms = int((time.time() - start_time) * 1000)
-    return self._parse_response(response.json(), request, latency_ms)
+    
+    # Validate response structure BEFORE parsing
+    self._validate_response_structure(response_data)
+    
+    # Parse response after validation
+    parsed_response = self._parse_response(response_data, request, latency_ms)
+    
+    return parsed_response
+  
+  def _validate_response_structure(self, response_data: Dict[str, Any]) -> None:
+    """Comprehensive validation of OpenAI response structure.
+    
+    This method performs exhaustive validation of the OpenAI API response
+    to ensure all required fields are present and properly formatted.
+    
+    Args:
+      response_data: Raw response dictionary from OpenAI API
+      
+    Raises:
+      ResponseValidationError: If any validation check fails
+    """
+    # Check top-level required fields
+    required_fields = ["choices", "model", "usage", "object"]
+    for field in required_fields:
+      if field not in response_data:
+        raise ResponseValidationError(f"Missing required field '{field}' in OpenAI response")
+    
+    # Validate object type
+    if response_data["object"] != "chat.completion":
+      raise ResponseValidationError(f"Invalid object type in OpenAI response: expected 'chat.completion', got '{response_data['object']}'")
+    
+    # Validate choices array
+    if not isinstance(response_data["choices"], list) or not response_data["choices"]:
+      raise ResponseValidationError("OpenAI response 'choices' must be a non-empty array")
+    
+    # Validate first choice structure (we only use the first choice)
+    choice = response_data["choices"][0]
+    required_choice_fields = ["message", "finish_reason", "index"]
+    for field in required_choice_fields:
+      if field not in choice:
+        raise ResponseValidationError(f"Missing required field '{field}' in OpenAI choice")
+    
+    # Validate choice index
+    if not isinstance(choice["index"], int) or choice["index"] < 0:
+      raise ResponseValidationError(f"Invalid choice index in OpenAI response: {choice['index']}")
+    
+    # Validate message structure
+    message = choice["message"]
+    if not isinstance(message, dict):
+      raise ResponseValidationError("OpenAI response message must be a dictionary")
+    
+    required_message_fields = ["content", "role"]
+    for field in required_message_fields:
+      if field not in message:
+        raise ResponseValidationError(f"Missing required field '{field}' in OpenAI message")
+    
+    # Validate message role
+    if message["role"] != "assistant":
+      raise ResponseValidationError(f"Invalid message role in OpenAI response: expected 'assistant', got '{message['role']}'")
+    
+    # Validate content is not empty
+    if not message["content"] or not isinstance(message["content"], str):
+      raise ResponseValidationError("OpenAI response message content must be a non-empty string")
+    
+    if len(message["content"].strip()) == 0:
+      raise ResponseValidationError("OpenAI response message content cannot be empty or whitespace only")
+    
+    # Validate finish reason
+    valid_finish_reasons = ["stop", "length", "function_call", "content_filter", "null"]
+    if choice["finish_reason"] not in valid_finish_reasons:
+      logger.warning(f"Unexpected finish reason in OpenAI response: {choice['finish_reason']}")
+    
+    # Validate usage information
+    usage = response_data["usage"]
+    if not isinstance(usage, dict):
+      raise ResponseValidationError("OpenAI usage must be a dictionary")
+    
+    required_usage_fields = ["prompt_tokens", "completion_tokens", "total_tokens"]
+    for field in required_usage_fields:
+      if field not in usage:
+        raise ResponseValidationError(f"Missing usage field '{field}' in OpenAI response")
+      if not isinstance(usage[field], int) or usage[field] < 0:
+        raise ResponseValidationError(f"OpenAI usage field '{field}' must be a non-negative integer, got {usage[field]}")
+    
+    # Validate token count consistency
+    if usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]:
+      raise ResponseValidationError(f"OpenAI token count inconsistency: total={usage['total_tokens']}, sum={usage['prompt_tokens'] + usage['completion_tokens']}")
+    
+    # Validate model field
+    if not isinstance(response_data["model"], str) or not response_data["model"]:
+      raise ResponseValidationError("OpenAI response model must be a non-empty string")
+    
+    # Additional validation for streaming indicators (should never be present)
+    if "stream" in response_data and response_data["stream"]:
+      raise ResponseValidationError("OpenAI response indicates streaming mode, but streaming is not supported")
+    
+    logger.debug(f"OpenAI response structure validation passed for model {response_data['model']}")
+  
+  def _prepare_request(self, request: ModelRequest) -> Dict[str, Any]:
+    """Convert ModelRequest to OpenAI format, ensuring no streaming.
+    
+    This method creates the request payload for OpenAI API with strict
+    streaming prevention and comprehensive parameter validation.
+    
+    Args:
+      request: The ModelRequest to convert
+      
+    Returns:
+      Dict containing the OpenAI API request payload
+      
+    Raises:
+      StreamingNotSupportedError: If streaming parameters are detected
+    """
+    # Build base payload with explicit streaming disabled
+    payload = {
+      "model": request.model,
+      "messages": [{"role": "user", "content": request.prompt}],
+      "temperature": request.temperature,
+      "max_tokens": request.max_tokens,
+      "stream": False  # Explicitly disable streaming - CRITICAL requirement
+    }
+    
+    # Add system prompt if provided
+    if request.system_prompt:
+      payload["messages"].insert(0, {"role": "system", "content": request.system_prompt})
+    
+    # Add stop sequences if provided
+    if request.stop_sequences:
+      payload["stop"] = request.stop_sequences
+    
+    # Strictly filter out ALL streaming-related parameters
+    streaming_params = {
+      "stream", "streaming", "stream_options", "stream_usage", 
+      "stream_callback", "stream_handler", "incremental"
+    }
+    
+    blocked_params = []
+    for key, value in request.provider_specific.items():
+      if key in streaming_params:
+        blocked_params.append(key)
+        logger.warning(f"Blocked streaming parameter '{key}' in OpenAI request")
+      else:
+        # Validate parameter before adding
+        if self._is_valid_openai_parameter(key, value):
+          payload[key] = value
+        else:
+          logger.warning(f"Skipped invalid OpenAI parameter '{key}': {value}")
+    
+    # Raise error if streaming was attempted
+    if blocked_params:
+      raise StreamingNotSupportedError(f"Streaming parameters not supported: {blocked_params}")
+    
+    # Final validation that no streaming is enabled
+    if payload.get("stream", False):
+      raise StreamingNotSupportedError("Stream parameter cannot be True")
+    
+    logger.debug(f"Prepared OpenAI request for {request.model} with {len(payload)} parameters")
+    return payload
+  
+  def _is_valid_openai_parameter(self, key: str, value: Any) -> bool:
+    """Validate that a parameter is valid for OpenAI API."""
+    # List of known valid OpenAI parameters
+    valid_params = {
+      "frequency_penalty", "logit_bias", "logprobs", "top_logprobs",
+      "max_tokens", "n", "presence_penalty", "response_format",
+      "seed", "stop", "temperature", "top_p", "tools", "tool_choice",
+      "user", "function_call", "functions"
+    }
+    
+    return key in valid_params
+  
+  def _parse_response(self, response_data: Dict[str, Any], request: ModelRequest, latency_ms: int) -> ModelResponse:
+    """Parse OpenAI response into standardized ModelResponse."""
+    choice = response_data["choices"][0]
+    message = choice["message"]
+    usage = response_data["usage"]
+    
+    return ModelResponse(
+      text=message["content"],
+      model=response_data["model"],
+      provider="openai",
+      timestamp=datetime.now(),
+      latency_ms=latency_ms,
+      token_count=usage["total_tokens"],
+      finish_reason=choice["finish_reason"],
+      cost_estimate=self._estimate_cost(usage, response_data["model"]),
+      metadata={
+        "prompt_tokens": usage["prompt_tokens"],
+        "completion_tokens": usage["completion_tokens"],
+        "finish_reason": choice["finish_reason"],
+        "choice_index": choice["index"]
+      }
+    )
+
+class AnthropicProvider(LLMProvider):
+  """Anthropic API provider implementation with structured output validation."""
+  
+  def __init__(self, config: ProviderConfig, http_client: HTTPClient):
+    super().__init__(config, http_client)
+    self.base_url = config.base_url or "https://api.anthropic.com"
+  
+  async def generate_response(self, request: ModelRequest) -> ModelResponse:
+    """Generate response using Anthropic API with no streaming and strict validation."""
+    headers = {
+      "x-api-key": self.config.api_key,
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01"
+    }
+    
+    payload = self._prepare_request(request)
+    # Anthropic doesn't use 'stream' parameter, but ensure no streaming params
+    
+    start_time = time.time()
+    
+    try:
+      response = await self.http_client.post(
+        f"{self.base_url}/v1/messages",
+        json=payload,
+        headers=headers
+      )
+      
+      if response.status != 200:
+        raise ProviderError("anthropic", f"API request failed with status {response.status}")
+      
+      response_data = response.json()
+      
+    except Exception as e:
+      raise ProviderError("anthropic", f"Request failed: {str(e)}", e)
+    
+    latency_ms = int((time.time() - start_time) * 1000)
+    
+    # Validate response structure BEFORE parsing
+    self._validate_response_structure(response_data)
+    
+    # Parse response after validation
+    parsed_response = self._parse_response(response_data, request, latency_ms)
+    
+    return parsed_response
+  
+  def _validate_response_structure(self, response_data: Dict[str, Any]) -> None:
+    """Comprehensive validation of Anthropic response structure."""
+    # Check top-level required fields
+    required_fields = ["content", "model", "role", "stop_reason", "usage"]
+    for field in required_fields:
+      if field not in response_data:
+        raise ResponseValidationError(f"Missing required field '{field}' in Anthropic response")
+    
+    # Validate content array
+    if not isinstance(response_data["content"], list) or not response_data["content"]:
+      raise ResponseValidationError("Anthropic response 'content' must be a non-empty array")
+    
+    # Validate first content block
+    content_block = response_data["content"][0]
+    if not isinstance(content_block, dict) or "text" not in content_block or "type" not in content_block:
+      raise ResponseValidationError("Anthropic content block must have 'text' and 'type' fields")
+    
+    if content_block["type"] != "text":
+      raise ResponseValidationError("Anthropic content block type must be 'text'")
+    
+    if not content_block["text"] or not isinstance(content_block["text"], str):
+      raise ResponseValidationError("Anthropic content text must be a non-empty string")
+    
+    # Validate usage information
+    usage = response_data["usage"]
+    required_usage_fields = ["input_tokens", "output_tokens"]
+    for field in required_usage_fields:
+      if field not in usage or not isinstance(usage[field], int) or usage[field] < 0:
+        raise ResponseValidationError(f"Anthropic usage field '{field}' must be a non-negative integer")
+  
+  def _prepare_request(self, request: ModelRequest) -> Dict[str, Any]:
+    """Convert ModelRequest to Anthropic format, ensuring no streaming."""
+    messages = [{"role": "user", "content": request.prompt}]
+    
+    payload = {
+      "model": request.model,
+      "messages": messages,
+      "max_tokens": request.max_tokens,
+      "temperature": request.temperature
+    }
+    
+    if request.system_prompt:
+      payload["system"] = request.system_prompt
+    
+    if request.stop_sequences:
+      payload["stop_sequences"] = request.stop_sequences
+    
+    # Filter out any streaming-related parameters
+    streaming_params = {"stream", "streaming", "stream_options"}
+    for key, value in request.provider_specific.items():
+      if key not in streaming_params:
+        payload[key] = value
+      else:
+        logger.warning(f"Blocked streaming parameter '{key}' in Anthropic request")
+    
+    return payload
 ```
 
 ### HTTP Client and Connection Management
@@ -242,81 +549,556 @@ class OpenAIProvider(LLMProvider):
 
 ```python
 class HTTPClient:
-  """HTTP client with connection pooling and rate limiting."""
+  """HTTP client with connection pooling."""
   
   def __init__(self, max_connections: int = 100, timeout: int = 30):
     self.session = aiohttp.ClientSession(
       connector=aiohttp.TCPConnector(limit=max_connections),
       timeout=aiohttp.ClientTimeout(total=timeout)
     )
-    self.rate_limiter = RateLimiter()
     self.retry_handler = RetryHandler()
   
   async def post(self, url: str, **kwargs) -> aiohttp.ClientResponse:
-    """Make POST request with rate limiting and retries."""
-    async with self.rate_limiter.acquire():
-      return await self.retry_handler.execute(
-        self.session.post, url, **kwargs
-      )
-```
+    """Make POST request with retries."""
+    return await self.retry_handler.execute(
+      self.session.post, url, **kwargs
+    )
+  
+  async def close(self):
+    """Close the HTTP session and connections."""
+    await self.session.close()
 
-#### Rate Limiting
+#### Conversation Context Management
 
 ```python
-class RateLimiter:
-  """Token bucket rate limiter for API requests."""
+class ConversationContext:
+  """Manages conversation history for maintaining context across questions."""
   
-  def __init__(self, requests_per_minute: int = 60):
-    self.requests_per_minute = requests_per_minute
-    self.tokens = requests_per_minute
-    self.last_update = time.time()
-    self.lock = asyncio.Lock()
+  def __init__(self, model: str, provider: str):
+    self.model = model
+    self.provider = provider
+    self.messages: List[Dict[str, str]] = []
+    self.system_prompt: Optional[str] = None
   
-  async def acquire(self):
-    """Acquire a token for making a request."""
-    async with self.lock:
-      now = time.time()
-      elapsed = now - self.last_update
-      self.tokens = min(
-        self.requests_per_minute,
-        self.tokens + elapsed * (self.requests_per_minute / 60)
-      )
-      self.last_update = now
-      
-      if self.tokens < 1:
-        wait_time = (1 - self.tokens) * (60 / self.requests_per_minute)
-        await asyncio.sleep(wait_time)
-        self.tokens = 0
-      else:
-        self.tokens -= 1
+  def add_system_prompt(self, prompt: str) -> None:
+    """Set the system prompt for the conversation."""
+    self.system_prompt = prompt
+  
+  def add_user_message(self, content: str) -> None:
+    """Add user message to conversation history."""
+    self.messages.append({"role": "user", "content": content})
+  
+  def add_assistant_message(self, content: str) -> None:
+    """Add assistant response to conversation history."""
+    self.messages.append({"role": "assistant", "content": content})
+  
+  def get_messages(self) -> List[Dict[str, str]]:
+    """Get complete message history including system prompt."""
+    messages = []
+    if self.system_prompt:
+      messages.append({"role": "system", "content": self.system_prompt})
+    messages.extend(self.messages)
+    return messages
+  
+  def clear_history(self) -> None:
+    """Clear conversation history while keeping system prompt."""
+    self.messages = []
 ```
+
+### Request Queue Management
+
+```python
+class ProviderRequestQueue:
+  """Manages sequential request processing for a single LLM provider.
+  
+  This class ensures that requests to the same LLM provider are processed
+  sequentially to respect rate limits and avoid overwhelming the provider,
+  while allowing concurrent processing across different providers.
+  
+  Key features:
+  - FIFO queue processing with asyncio.Queue
+  - Sequential request processing per provider
+  - Future-based result coordination
+  - Comprehensive response validation
+  - Graceful error handling without affecting other providers
+  """
+  
+  def __init__(self, provider_name: str, provider: LLMProvider, queue_timeout: int = 30):
+    self.provider_name = provider_name
+    self.provider = provider
+    self.queue = asyncio.Queue()
+    self.processing_task = None
+    self.is_processing = False
+    self.lock = asyncio.Lock()
+    self.queue_timeout = queue_timeout
+    self.response_validator = ResponseValidator()
+  
+  async def add_request(self, request: ModelRequest) -> ModelResponse:
+    """Add request to queue and wait for result.
+    
+    This method ensures that all requests to this provider are processed
+    sequentially, maintaining strict FIFO order and respecting rate limits.
+    
+    Args:
+      request: The ModelRequest to process
+      
+    Returns:
+      ModelResponse: Validated response from the provider
+      
+    Raises:
+      ResponseValidationError: If response validation fails
+      ProviderError: If the provider request fails
+    """
+    # Create future for coordinating response delivery
+    future = asyncio.Future()
+    
+    # Add request and future to queue as tuple
+    await self.queue.put((request, future))
+    logger.debug(f"Added request to queue for {self.provider_name}:{request.model}")
+    
+    # Start processing if not already running
+    async with self.lock:
+      if not self.is_processing:
+        self.processing_task = asyncio.create_task(self._process_queue())
+        logger.debug(f"Started queue processing for {self.provider_name}")
+    
+    # Wait for result from processing task
+    return await future
+  
+  async def _process_queue(self):
+    """Process requests sequentially from the queue.
+    
+    This method processes one request at a time, ensuring that the next
+    request is only sent after the previous one has been fully responded to.
+    The queue remains active for a configurable timeout period.
+    """
+    self.is_processing = True
+    logger.info(f"Queue processing started for {self.provider_name}")
+    
+    try:
+      while True:
+        try:
+          # Wait for next request with configurable timeout
+          request, future = await asyncio.wait_for(
+            self.queue.get(), timeout=self.queue_timeout
+          )
+          
+          try:
+            # Process request sequentially - wait for complete response
+            logger.debug(f"Processing request for {self.provider_name}:{request.model}")
+            
+            # Ensure no streaming parameters before processing
+            validated_request = self._ensure_no_streaming(request)
+            
+            # Make request and wait for complete response
+            response = await self.provider.generate_response(validated_request)
+            
+            # Comprehensive response validation before returning
+            self.response_validator.validate_complete_response(response, self.provider_name)
+            
+            # Set successful result
+            future.set_result(response)
+            logger.debug(f"Completed request for {self.provider_name}:{request.model} in {response.latency_ms}ms")
+            
+          except Exception as e:
+            logger.error(f"Request failed for {self.provider_name}: {e}")
+            future.set_exception(e)
+          finally:
+            self.queue.task_done()
+            
+        except asyncio.TimeoutError:
+          # No requests in queue for timeout period, exit processing
+          logger.debug(f"Queue processing stopped for {self.provider_name} - no requests for {self.queue_timeout}s")
+          break
+          
+    except Exception as e:
+      logger.error(f"Queue processing error for {self.provider_name}: {e}")
+    finally:
+      self.is_processing = False
+      logger.info(f"Queue processing ended for {self.provider_name}")
+  
+  def _ensure_no_streaming(self, request: ModelRequest) -> ModelRequest:
+    """Ensure no streaming parameters are present in the request."""
+    provider_specific = request.provider_specific.copy()
+    streaming_params = {'stream', 'streaming', 'stream_options', 'stream_usage'}
+    
+    removed_params = []
+    for param in streaming_params:
+      if param in provider_specific:
+        del provider_specific[param]
+        removed_params.append(param)
+    
+    if removed_params:
+      logger.warning(f"Removed streaming parameters {removed_params} from {self.provider_name} request")
+    
+    return ModelRequest(
+      prompt=request.prompt,
+      model=request.model,
+      temperature=request.temperature,
+      max_tokens=request.max_tokens,
+      system_prompt=request.system_prompt,
+      stop_sequences=request.stop_sequences,
+      provider_specific=provider_specific
+    )
+
+class ResponseValidator:
+  """Comprehensive response validation for all LLM providers."""
+  
+  def validate_complete_response(self, response: ModelResponse, provider_name: str) -> None:
+    """Perform comprehensive validation of response structure and content.
+    
+    Args:
+      response: The ModelResponse to validate
+      provider_name: Name of the provider for error context
+      
+    Raises:
+      ResponseValidationError: If any validation check fails
+    """
+    # Validate basic response structure
+    self._validate_basic_structure(response, provider_name)
+    
+    # Validate response content
+    self._validate_content(response, provider_name)
+    
+    # Validate metadata
+    self._validate_metadata(response, provider_name)
+    
+    logger.debug(f"Response validation passed for {provider_name}:{response.model}")
+  
+  def _validate_basic_structure(self, response: ModelResponse, provider_name: str) -> None:
+    """Validate basic response structure and required fields."""
+    if not isinstance(response, ModelResponse):
+      raise ResponseValidationError(f"Invalid response type from {provider_name}: expected ModelResponse")
+    
+    # Validate text content
+    if not response.text or not isinstance(response.text, str):
+      raise ResponseValidationError(f"Invalid or empty response text from {provider_name}")
+    
+    if len(response.text.strip()) == 0:
+      raise ResponseValidationError(f"Empty response text content from {provider_name}")
+    
+    # Validate model field
+    if not response.model or not isinstance(response.model, str):
+      raise ResponseValidationError(f"Invalid model field from {provider_name}")
+    
+    # Validate provider field
+    if not response.provider or not isinstance(response.provider, str):
+      raise ResponseValidationError(f"Invalid provider field from {provider_name}")
+    
+    # Validate timestamp
+    if not isinstance(response.timestamp, datetime):
+      raise ResponseValidationError(f"Invalid timestamp from {provider_name}")
+  
+  def _validate_content(self, response: ModelResponse, provider_name: str) -> None:
+    """Validate response content quality and completeness."""
+    # Check for minimum content length
+    if len(response.text.strip()) < 1:
+      raise ResponseValidationError(f"Response text too short from {provider_name}")
+    
+    # Validate latency is reasonable
+    if response.latency_ms is None or response.latency_ms < 0:
+      raise ResponseValidationError(f"Invalid latency from {provider_name}: {response.latency_ms}")
+    
+    if response.latency_ms > 300000:  # 5 minutes
+      logger.warning(f"Very high latency from {provider_name}: {response.latency_ms}ms")
+  
+  def _validate_metadata(self, response: ModelResponse, provider_name: str) -> None:
+    """Validate response metadata fields."""
+    # Validate token count if present
+    if response.token_count is not None:
+      if not isinstance(response.token_count, int) or response.token_count < 0:
+        raise ResponseValidationError(f"Invalid token count from {provider_name}: {response.token_count}")
+    
+    # Validate finish reason if present
+    if response.finish_reason is not None:
+      if not isinstance(response.finish_reason, str):
+        raise ResponseValidationError(f"Invalid finish reason from {provider_name}")
+    
+    # Validate cost estimate if present
+    if response.cost_estimate is not None:
+      if not isinstance(response.cost_estimate, (int, float)) or response.cost_estimate < 0:
+        raise ResponseValidationError(f"Invalid cost estimate from {provider_name}: {response.cost_estimate}")
+    
+    # Validate metadata dictionary
+    if not isinstance(response.metadata, dict):
+      raise ResponseValidationError(f"Invalid metadata type from {provider_name}: expected dict")
+
+class ConcurrentLLMManager:
+  """Manages concurrent execution across multiple LLM providers with sequential per-provider processing.
+  
+  This class implements the core concurrency requirement:
+  - Multiple LLMs are queried concurrently using separate async tasks
+  - Each LLM processes requests sequentially through dedicated queues
+  - Responses maintain original request order regardless of completion timing
+  - Comprehensive validation ensures all responses are properly structured
+  """
+  
+  def __init__(self, providers: Dict[str, LLMProvider], model_to_provider: Dict[str, str]):
+    self.provider_queues = {
+      name: ProviderRequestQueue(name, provider)
+      for name, provider in providers.items()
+    }
+    self.providers = providers
+    self.model_to_provider = model_to_provider
+    self.response_validator = ResponseValidator()
+  
+  async def process_requests_concurrent(self, requests: List[ModelRequest]) -> List[ModelResponse]:
+    """Process multiple requests concurrently across different LLMs, sequentially per LLM.
+    
+    This method implements the core concurrency requirement:
+    - Multiple LLMs are queried concurrently using separate async tasks
+    - Each LLM processes requests sequentially (next query only after previous response)
+    - All responses are validated for proper structure before returning
+    - Original request order is maintained in the response list
+    
+    Args:
+      requests: List of ModelRequest objects to process
+      
+    Returns:
+      List of ModelResponse objects in the same order as input requests
+      
+    Raises:
+      ResponseValidationError: If any response fails structure validation
+      ProviderError: If any provider fails to respond
+      ModelNotFoundError: If a model is not found in any configured provider
+    """
+    if not requests:
+      return []
+    
+    logger.info(f"Starting concurrent processing of {len(requests)} requests")
+    
+    # Validate all models are available before processing
+    self._validate_all_models(requests)
+    
+    # Create tasks for concurrent execution - each request gets its own task
+    tasks_with_index = []
+    
+    for i, request in enumerate(requests):
+      provider_name = self._get_provider_name_for_model(request.model)
+      queue = self.provider_queues[provider_name]
+      
+      # Create async task for this request
+      task = asyncio.create_task(queue.add_request(request))
+      tasks_with_index.append((task, i, request))
+    
+    # Wait for all tasks to complete concurrently
+    logger.info(f"Processing {len(requests)} requests across {len(set(self._get_provider_name_for_model(r.model) for r in requests))} providers")
+    
+    # Use gather with return_exceptions to handle individual failures
+    tasks = [task for task, _, _ in tasks_with_index]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Process results and maintain original order
+    responses = [None] * len(requests)
+    failed_requests = []
+    
+    for (task, original_index, request), result in zip(tasks_with_index, results):
+      if isinstance(result, Exception):
+        logger.error(f"Request {original_index} for {request.model} failed: {result}")
+        failed_requests.append((original_index, request.model, result))
+      else:
+        # Additional validation at manager level
+        try:
+          provider_name = self._get_provider_name_for_model(request.model)
+          self.response_validator.validate_complete_response(result, provider_name)
+          responses[original_index] = result
+          logger.debug(f"Request {original_index} completed successfully")
+        except Exception as e:
+          logger.error(f"Response validation failed for request {original_index}: {e}")
+          failed_requests.append((original_index, request.model, e))
+    
+    # Handle any failures
+    if failed_requests:
+      error_details = [f"Request {idx} ({model}): {error}" for idx, model, error in failed_requests]
+      raise ProviderError("multiple", f"Failed requests: {'; '.join(error_details)}")
+    
+    # Ensure all responses are present
+    if None in responses:
+      missing_indices = [i for i, r in enumerate(responses) if r is None]
+      raise RuntimeError(f"Requests at indices {missing_indices} did not complete successfully")
+    
+    logger.info(f"Successfully processed {len(responses)} requests with concurrent/sequential execution")
+    return responses
+  
+  def _validate_all_models(self, requests: List[ModelRequest]) -> None:
+    """Validate that all requested models are available in configured providers."""
+    missing_models = []
+    for request in requests:
+      try:
+        self._get_provider_name_for_model(request.model)
+      except ModelNotFoundError:
+        missing_models.append(request.model)
+    
+    if missing_models:
+      raise ModelNotFoundError("validation", f"Models not found in any configured provider: {missing_models}")
+  
+  def _get_provider_name_for_model(self, model: str) -> str:
+    """Get the provider name for a given model.
+    
+    Args:
+      model: The model name to look up
+      
+    Returns:
+      str: The provider name that supports this model
+      
+    Raises:
+      ModelNotFoundError: If the model is not found in any provider
+    """
+    if model in self.model_to_provider:
+      return self.model_to_provider[model]
+    
+    # Fallback: search through provider configurations
+    for provider_name, provider in self.providers.items():
+      # This would check the provider's supported models
+      # Implementation depends on how models are configured
+      pass
+    
+    raise ModelNotFoundError("unknown", f"Model {model} not found in any configured provider")
+  
+  async def get_provider_status(self) -> Dict[str, Dict[str, Any]]:
+    """Get status information for all provider queues.
+    
+    Returns:
+      Dict mapping provider names to status information including:
+      - is_processing: Whether the queue is actively processing
+      - queue_size: Number of pending requests
+      - last_activity: Timestamp of last request processing
+    """
+    status = {}
+    for provider_name, queue in self.provider_queues.items():
+      status[provider_name] = {
+        "is_processing": queue.is_processing,
+        "queue_size": queue.queue.qsize(),
+        "provider_name": provider_name
+      }
+    return status
 
 ### Main LLM Client
 
 ```python
 class LLMClient:
-  """Main client interface for LLM operations."""
+  """Main client interface for LLM operations with concurrent/sequential request management."""
   
   def __init__(self, config_dir: Path, config_name: str = "default-llms"):
-    self.config = LLMConfig.from_files(config_dir, config_name)
+    self.config = LLMConfig.from_file(config_dir, config_name)
     self.http_client = HTTPClient()
     self.providers = self._initialize_providers()
+    self.concurrent_manager = ConcurrentLLMManager(self.providers)
+    self.response_validator = ResponseValidator()
+    
+    # Validate that no streaming is configured
+    self._validate_no_streaming_config()
   
   async def generate_response(self, request: ModelRequest) -> ModelResponse:
-    """Generate response using appropriate provider."""
-    provider = self._get_provider_for_model(request.model)
-    return await provider.generate_response(request)
+    """Generate single response using appropriate provider with sequential processing per provider.
+    
+    This method ensures:
+    - No streaming parameters are allowed
+    - Request is processed sequentially for the target provider
+    - Response is validated for proper structure
+    """
+    # Ensure no streaming parameters are present
+    validated_request = self._disable_streaming(request)
+    
+    # Get provider name and use concurrent manager for consistent processing
+    provider_name = self._get_provider_name_for_model(validated_request.model)
+    queue = self.concurrent_manager.provider_queues[provider_name]
+    
+    # Process single request through the queue system
+    response = await queue.add_request(validated_request)
+    
+    # Additional validation at client level
+    self.response_validator.validate_response(response)
+    
+    return response
+  
+  async def generate_responses_concurrent(self, requests: List[ModelRequest]) -> List[ModelResponse]:
+    """Generate responses concurrently across different LLMs, sequentially per LLM.
+    
+    This method implements the core concurrency requirement:
+    - When multiple LLMs are provided, they are queried concurrently
+    - Each LLM processes requests sequentially (next query only after previous response)
+    - All responses are validated for proper structure
+    - No streaming responses are supported
+    
+    Args:
+      requests: List of ModelRequest objects to process
+      
+    Returns:
+      List of ModelResponse objects in the same order as input requests
+      
+    Raises:
+      ResponseValidationError: If any response fails structure validation
+      StreamingNotSupportedError: If streaming is attempted
+      ProviderError: If any provider fails
+    """
+    if not requests:
+      return []
+    
+    # Ensure no streaming parameters in any request
+    validated_requests = []
+    for request in requests:
+      validated_request = self._disable_streaming(request)
+      validated_requests.append(validated_request)
+    
+    # Use the concurrent manager to process requests
+    return await self.concurrent_manager.process_requests_concurrent(validated_requests)
   
   async def list_all_models(self) -> Dict[str, List[str]]:
-    """List models from all configured providers."""
-    results = {}
+    """List models from all configured providers concurrently.
+    
+    This method queries all providers concurrently to get available models,
+    but respects the sequential processing within each provider.
+    """
+    tasks = {}
     for name, provider in self.providers.items():
+      # Create async task for each provider
+      tasks[name] = asyncio.create_task(provider.list_models())
+    
+    results = {}
+    for name, task in tasks.items():
       try:
-        results[name] = await provider.list_models()
+        models = await task
+        # Validate that we got a proper list
+        if not isinstance(models, list):
+          logger.error(f"Provider {name} returned invalid model list format")
+          results[name] = []
+        else:
+          results[name] = models
+          logger.info(f"Retrieved {len(models)} models from {name}")
       except Exception as e:
         logger.error(f"Failed to list models for {name}: {e}")
         results[name] = []
+    
     return results
+  
+  def _disable_streaming(self, request: ModelRequest) -> ModelRequest:
+    """Ensure streaming is disabled in request and log warning if attempted."""
+    # Create a copy to avoid modifying the original request
+    provider_specific = request.provider_specific.copy()
+    
+    # Remove any streaming-related parameters
+    streaming_params = ['stream', 'streaming', 'stream_options']
+    removed_params = []
+    
+    for param in streaming_params:
+      if param in provider_specific:
+        del provider_specific[param]
+        removed_params.append(param)
+    
+    if removed_params:
+      logger.warning(f"Removed streaming parameters {removed_params} from request - streaming not supported")
+    
+    # Return new request with streaming disabled
+    return ModelRequest(
+      prompt=request.prompt,
+      model=request.model,
+      temperature=request.temperature,
+      max_tokens=request.max_tokens,
+      system_prompt=request.system_prompt,
+      stop_sequences=request.stop_sequences,
+      provider_specific=provider_specific
+    )
   
   def validate_configuration(self) -> List[str]:
     """Validate complete configuration setup."""
@@ -324,6 +1106,60 @@ class LLMClient:
     errors = validator.validate_config(self.config)
     errors.extend(validator.validate_environment_variables(self.config))
     return errors
+  
+  def _get_provider_for_model(self, model: str) -> LLMProvider:
+    """Get the appropriate provider for a given model."""
+    for provider_name, provider in self.providers.items():
+      if model in self.config.providers[provider_name].models:
+        return provider
+    raise ModelNotFoundError("unknown", f"Model {model} not found in any configured provider")
+  
+  def _get_provider_name_for_model(self, model: str) -> str:
+    """Get the provider name for a given model."""
+    for provider_name, provider_config in self.config.providers.items():
+      if model in provider_config.models:
+        return provider_name
+    raise ModelNotFoundError("unknown", f"Model {model} not found in any configured provider")
+
+class ResponseValidator:
+  """Validates LLM response structure and completeness."""
+  
+  def validate_response(self, response: ModelResponse) -> None:
+    """Validate response structure and required fields.
+    
+    This method ensures that all LLM responses have the required structure
+    and contain valid data before being returned to the caller.
+    """
+    # Validate required string fields
+    if not response.text or not isinstance(response.text, str):
+      raise ResponseValidationError("Response text is empty, missing, or not a string")
+    
+    if not response.model or not isinstance(response.model, str):
+      raise ResponseValidationError("Response model field is missing or not a string")
+    
+    if not response.provider or not isinstance(response.provider, str):
+      raise ResponseValidationError("Response provider field is missing or not a string")
+    
+    # Validate numeric fields
+    if response.latency_ms is None or not isinstance(response.latency_ms, int) or response.latency_ms < 0:
+      raise ResponseValidationError("Response latency_ms is missing, invalid, or negative")
+    
+    # Validate timestamp
+    if not response.timestamp or not isinstance(response.timestamp, datetime):
+      raise ResponseValidationError("Response timestamp is missing or not a datetime object")
+    
+    # Validate optional fields if present
+    if response.token_count is not None and (not isinstance(response.token_count, int) or response.token_count < 0):
+      raise ResponseValidationError("Response token_count must be a non-negative integer if provided")
+    
+    if response.cost_estimate is not None and (not isinstance(response.cost_estimate, (int, float)) or response.cost_estimate < 0):
+      raise ResponseValidationError("Response cost_estimate must be a non-negative number if provided")
+    
+    # Validate metadata is a dictionary
+    if not isinstance(response.metadata, dict):
+      raise ResponseValidationError("Response metadata must be a dictionary")
+    
+    logger.debug(f"Response validation passed for {response.provider}:{response.model}")
 ```
 
 ## Data Models
@@ -376,7 +1212,7 @@ sequenceDiagram
     LLMClient->>Provider: generate_response(request)
     Provider->>Provider: _prepare_request(request)
     Provider->>HTTPClient: post(url, payload, headers)
-    HTTPClient->>HTTPClient: rate_limiter.acquire()
+
     HTTPClient->>API: HTTP POST
     API-->>HTTPClient: Response
     HTTPClient-->>Provider: Response
@@ -402,8 +1238,12 @@ class AuthenticationError(LLMConnectorError):
   """Authentication and API key errors."""
   pass
 
-class RateLimitError(LLMConnectorError):
-  """Rate limiting errors."""
+class ResponseValidationError(LLMConnectorError):
+  """Response structure validation errors."""
+  pass
+
+class StreamingNotSupportedError(LLMConnectorError):
+  """Error when streaming is attempted but not supported."""
   pass
 
 class ProviderError(LLMConnectorError):
@@ -422,9 +1262,8 @@ class ModelNotFoundError(ProviderError):
 
 1. **Configuration Errors**: Fail fast during initialization with clear error messages
 2. **Authentication Errors**: Provide specific guidance for each provider's authentication method
-3. **Rate Limit Errors**: Implement exponential backoff with configurable retry limits
-4. **Network Errors**: Retry with circuit breaker pattern for provider availability
-5. **Model Errors**: Graceful degradation with alternative model suggestions
+3. **Network Errors**: Retry with circuit breaker pattern for provider availability
+4. **Model Errors**: Graceful degradation with alternative model suggestions
 
 ## Testing Strategy
 
@@ -432,14 +1271,14 @@ class ModelNotFoundError(ProviderError):
 
 ```python
 class TestConfigLoader:
-  """Test configuration loading and merging."""
+  """Test configuration loading."""
   
   def test_load_default_config(self):
     """Test loading default configuration."""
     pass
   
-  def test_merge_custom_config(self):
-    """Test merging custom configuration with defaults."""
+  def test_load_custom_config(self):
+    """Test loading custom configuration file."""
     pass
   
   def test_environment_variable_resolution(self):
@@ -495,9 +1334,8 @@ class TestLLMClientIntegration:
 ### Request Security
 
 1. **Input Sanitization**: Validate all request parameters
-2. **Rate Limiting**: Prevent abuse through rate limiting
-3. **Timeout Handling**: Prevent hanging requests
-4. **Error Sanitization**: Remove sensitive data from error responses
+2. **Timeout Handling**: Prevent hanging requests
+3. **Error Sanitization**: Remove sensitive data from error responses
 
 ## Performance Considerations
 
@@ -509,9 +1347,10 @@ class TestLLMClientIntegration:
 
 ### Concurrent Requests
 
-- Semaphore-based concurrency limiting
-- Provider-specific rate limiting
+- Concurrent processing across different LLM providers
+- Sequential processing per individual LLM provider using request queues
 - Async/await pattern for non-blocking operations
+- No streaming support - all responses are complete before processing
 
 ### Memory Management
 

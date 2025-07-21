@@ -8,15 +8,16 @@ This document outlines the requirements for implementing a large language model 
 
 ### Requirement 1
 
-**User Story:** As a developer, I want to configure multiple LLM providers through YAML configuration files, so that I can easily manage different provider settings and switch between them without code changes.
+**User Story:** As a developer, I want to configure multiple LLM providers through a single YAML configuration file, so that I can easily manage different provider settings and specify which configuration to use per CLI command.
 
 #### Acceptance Criteria
 
-1. WHEN the system loads LLM configuration THEN it SHALL read YAML files from the `config/llms/` directory
-2. WHEN multiple configuration files exist THEN the system SHALL merge them with custom configurations taking precedence over defaults
-3. WHEN a configuration file is malformed THEN the system SHALL raise a descriptive validation error
-4. WHEN environment variables are referenced in configuration THEN the system SHALL resolve them at runtime
-5. IF a provider configuration is missing required fields THEN the system SHALL raise a configuration validation error
+1. WHEN the system loads LLM configuration THEN it SHALL read a single YAML file from the `config/llms/` directory
+2. WHEN no configuration file is specified THEN the system SHALL use `default-llms.yaml` as the default configuration
+3. WHEN a CLI command specifies a configuration file THEN the system SHALL use exactly that configuration file
+4. WHEN a configuration file is malformed THEN the system SHALL raise a descriptive validation error
+5. WHEN environment variables are referenced in configuration THEN the system SHALL resolve them at runtime
+6. IF a provider configuration is missing required fields THEN the system SHALL raise a configuration validation error
 
 ### Requirement 2
 
@@ -62,10 +63,10 @@ This document outlines the requirements for implementing a large language model 
 
 #### Acceptance Criteria
 
-1. WHEN the application starts THEN it SHALL validate all configuration files in the config directory
+1. WHEN the application starts THEN it SHALL validate the specified configuration file
 2. WHEN configuration validation fails THEN the system SHALL provide specific error messages indicating the file and field
 3. WHEN required configuration sections are missing THEN the system SHALL list all missing sections
-4. WHEN configuration merging occurs THEN the system SHALL validate the final merged configuration
+4. WHEN configuration is loaded THEN the system SHALL validate the complete configuration structure
 5. IF configuration is valid THEN the system SHALL proceed with provider initialization
 
 ### Requirement 6
@@ -82,29 +83,49 @@ This document outlines the requirements for implementing a large language model 
 
 ### Requirement 7
 
-**User Story:** As a developer, I want to handle provider-specific authentication methods, so that I can connect to different services with their required authentication patterns.
+**User Story:** As a developer, I want to authenticate with all providers using API keys from environment variables, so that I can have a consistent authentication approach across all services.
 
 #### Acceptance Criteria
 
-1. WHEN connecting to OpenAI THEN the system SHALL use Bearer token authentication
-2. WHEN connecting to Anthropic THEN the system SHALL use x-api-key header authentication
-3. WHEN connecting to Gemini THEN the system SHALL use Google Cloud authentication patterns
-4. WHEN connecting to OpenAI-compatible providers THEN the system SHALL support configurable authentication headers
-5. WHEN authentication fails THEN the system SHALL provide provider-specific error guidance
+1. WHEN connecting to any provider THEN the system SHALL use API keys configured in environment variables
+2. WHEN an API key environment variable is missing THEN the system SHALL raise a clear authentication error
+3. WHEN authentication fails THEN the system SHALL provide a descriptive error message
 
 ### Requirement 8
 
-**User Story:** As a developer, I want to implement connection pooling and rate limiting, so that I can efficiently manage API calls and respect provider limits.
+**User Story:** As a developer, I want to support concurrent querying across multiple LLMs with sequential requests per LLM, so that I can efficiently benchmark multiple models while respecting per-provider rate limits and ensuring proper response ordering.
 
 #### Acceptance Criteria
 
-1. WHEN making multiple API calls THEN the system SHALL reuse HTTP connections through connection pooling
-2. WHEN rate limits are approached THEN the system SHALL implement exponential backoff
-3. WHEN rate limit errors occur THEN the system SHALL retry with appropriate delays
-4. WHEN concurrent requests are made THEN the system SHALL limit them based on provider capabilities
-5. IF a provider becomes temporarily unavailable THEN the system SHALL handle graceful degradation
+1. WHEN multiple LLMs are configured THEN the system SHALL query them concurrently using separate async tasks with dedicated request queues per provider
+2. WHEN making requests to the same LLM provider THEN the system SHALL process them sequentially in a dedicated FIFO queue
+3. WHEN a request is in progress for an LLM THEN the system SHALL wait for the complete response before sending the next request to that same LLM
+4. WHEN concurrent requests are made to different LLMs THEN the system SHALL process them in parallel without blocking each other
+5. WHEN an LLM provider request completes THEN the system SHALL immediately process the next queued request for that provider if available
+6. IF an LLM provider fails THEN the system SHALL continue processing requests for other LLMs without interruption
+7. WHEN processing multiple requests THEN the system SHALL maintain strict request order within each provider's queue using asyncio.Queue
+8. WHEN all concurrent requests complete THEN the system SHALL return responses in the original request order regardless of completion timing
+9. WHEN a provider queue is empty THEN the system SHALL keep the queue processing task alive for a configurable timeout period
+10. WHEN implementing request queues THEN the system SHALL use asyncio.Future objects to coordinate between request submission and response delivery
 
 ### Requirement 9
+
+**User Story:** As a developer, I want structured output validation from all LLM providers, so that I can ensure consistent and reliable response processing with comprehensive validation.
+
+#### Acceptance Criteria
+
+1. WHEN receiving responses from any LLM provider THEN the system SHALL validate the complete response structure before parsing
+2. WHEN a response is malformed or incomplete THEN the system SHALL raise a ResponseValidationError with specific field information
+3. WHEN parsing provider responses THEN the system SHALL verify all required fields are present and have correct data types
+4. WHEN response validation fails THEN the system SHALL provide detailed error information about missing, invalid, or malformed fields
+5. IF a provider returns an unexpected response format THEN the system SHALL log the complete response structure and raise a detailed exception
+6. WHEN validating OpenAI responses THEN the system SHALL check for choices, model, usage, and object fields with proper nested structure
+7. WHEN validating Anthropic responses THEN the system SHALL check for content, model, role, stop_reason, and usage fields
+8. WHEN validating any response THEN the system SHALL ensure text content is non-empty and properly formatted
+9. WHEN response validation passes THEN the system SHALL log successful validation at debug level
+10. WHEN creating ModelResponse objects THEN the system SHALL validate all required fields are populated with correct types
+
+### Requirement 10
 
 **User Story:** As a developer, I want to support configuration discovery and listing, so that I can see what configurations are available and validate my setup.
 
@@ -116,7 +137,24 @@ This document outlines the requirements for implementing a large language model 
 4. WHEN no configurations exist THEN the system SHALL provide guidance on creating configuration files
 5. IF configuration directory doesn't exist THEN the system SHALL create it with example files
 
-### Requirement 10
+### Requirement 11
+
+**User Story:** As a developer, I want to explicitly disable streaming responses, so that I can ensure consistent response handling and avoid complexity of stream processing.
+
+#### Acceptance Criteria
+
+1. WHEN making requests to any LLM provider THEN the system SHALL never use streaming response modes under any circumstances
+2. WHEN providers support streaming THEN the system SHALL explicitly set stream=false or equivalent in request parameters
+3. WHEN receiving responses THEN the system SHALL wait for the complete response before processing or returning results
+4. WHEN a provider only supports streaming THEN the system SHALL raise a StreamingNotSupportedError with clear guidance
+5. WHEN streaming parameters are found in configuration THEN the system SHALL remove them and log a warning message with parameter names
+6. WHEN preparing requests THEN the system SHALL filter out all streaming-related parameters from provider_specific sections including stream, streaming, stream_options
+7. IF any streaming parameter is detected in a request THEN the system SHALL block it and provide a clear error message
+8. WHEN initializing providers THEN the system SHALL validate that no streaming configuration is present
+9. WHEN validating requests THEN the system SHALL ensure no streaming parameters are included in any request payload
+10. WHEN documenting the system THEN streaming limitations SHALL be clearly stated in all provider documentation
+
+### Requirement 12
 
 **User Story:** As a developer, I want comprehensive error handling and logging, so that I can troubleshoot configuration and connectivity issues effectively.
 
