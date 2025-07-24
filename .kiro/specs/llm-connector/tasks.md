@@ -27,7 +27,7 @@
     - Check `pyproject.toml` for existing test dependencies before adding pytest with `uv add --dev pytest`
     - _Requirements: 1.1, 1.3, 5.1, 5.2_
 
-  - [ ] 1.5 Create unit tests for custom exception classes
+  - [x] 1.5 Create unit tests for custom exception classes
     - Write unit tests for all custom exception classes with various error scenarios
     - Test exception inheritance, error messages, and context information
     - Test ConversationHistoryError with various conversation history validation scenarios
