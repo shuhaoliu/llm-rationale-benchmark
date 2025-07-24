@@ -4,23 +4,29 @@
 
 ### Virtual Environment
 - Always use virtual environments for development
-- Use `python -m venv venv` for consistency
+- Use `uv venv` to create virtual environments
+- Use `uv run` to execute commands in the virtual environment
 - Include activation instructions in documentation
-- Add `.venv/` and `venv/` to `.gitignore`
+- Add `.venv/` to `.gitignore`
 
 ### Dependencies Management
-- Use `requirements.txt` for production dependencies
-- Use `requirements-dev.txt` for development tools
-- Pin exact versions in production requirements
+- **ALWAYS** use `uv` for dependency management with `pyproject.toml` - never use `pip`
+- **CRITICAL**: Before writing any code, always check whether dependencies have already been added to `pyproject.toml`
+- **MANDATORY**: Check `pyproject.toml` for existing dependencies before adding new ones
+- Use `uv add <package>` to add new production dependencies
+- Use `uv add --dev <package>` for development tools
+- Use `uv sync` to install dependencies from lock file
+- Use `uv run <command>` to execute commands in the virtual environment
+- Pin exact versions for production requirements
 - Include version ranges in development requirements
-- Update dependencies regularly and test compatibility
+- Update dependencies regularly with `uv lock --upgrade` and test compatibility
 
 ### Development Tools
-- **pytest**: Testing framework
-- **black**: Code formatting (configured for 2-space indentation)
-- **flake8**: Linting and style checking
-- **mypy**: Type checking
-- **coverage**: Code coverage reporting
+- **pytest**: Testing framework (check `pyproject.toml` first, add with `uv add --dev pytest` if not present)
+- **black**: Code formatting (check `pyproject.toml` first, add with `uv add --dev black` if not present - configured for 2-space indentation)
+- **ruff**: Linting and style checking (check `pyproject.toml` first, add with `uv add --dev ruff` if not present)
+- **mypy**: Type checking (check `pyproject.toml` first, add with `uv add --dev mypy` if not present)
+- **coverage**: Code coverage reporting (check `pyproject.toml` first, add with `uv add --dev coverage` if not present)
 
 ## Git Workflow
 
@@ -48,6 +54,13 @@
 7. Squash and merge when approved
 
 ## Testing Standards
+
+### Test-First Development
+- **MANDATORY**: When generating tasks, always create unit tests and mock tests as subtasks before actual code implementation
+- **CRITICAL**: Tests must be created as subtasks before any implementation work begins
+- Write tests before implementing functionality
+- Use Test-Driven Development (TDD) approach where appropriate
+- **ALWAYS** check `pyproject.toml` for existing test dependencies before adding new ones with `uv add --dev`
 
 ### Test Organization
 - Mirror source code structure in `tests/` directory

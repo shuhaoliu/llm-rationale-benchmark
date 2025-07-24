@@ -83,8 +83,15 @@ def calculate_total(items: list[dict]) -> float:
 
 ## Testing Standards
 
+### Test-First Development
+- **MANDATORY**: When generating tasks, always create unit tests and mock tests as subtasks before actual code implementation
+- **CRITICAL**: Tests must be created as subtasks before any implementation work begins
+- Write tests before implementing functionality
+- Use Test-Driven Development (TDD) approach where appropriate
+- **ALWAYS** check `pyproject.toml` for existing test dependencies before adding new ones with `uv add --dev`
+
 ### Test Structure
-- Use pytest as the testing framework
+- Use pytest as the testing framework (check `pyproject.toml` first, add with `uv add --dev pytest` if not present)
 - Follow the Arrange-Act-Assert pattern
 - Use descriptive test names that explain the scenario
 
@@ -108,12 +115,18 @@ def test_calculate_total_returns_sum_of_item_prices():
 ## Dependencies and Environment
 
 ### Package Management
-- Use `requirements.txt` for production dependencies
-- Use `requirements-dev.txt` for development dependencies
+- **ALWAYS** use `uv` for dependency management with `pyproject.toml` - never use `pip`
+- **CRITICAL**: Before writing any code, always check whether dependencies have already been added to `pyproject.toml`
+- **MANDATORY**: Check `pyproject.toml` for existing dependencies before adding new ones
+- Use `uv add <package>` to add new production dependencies
+- Use `uv add --dev <package>` for development dependencies
 - Pin exact versions for production, allow ranges for development
+- Use `uv sync` to install dependencies from lock file
+- Use `uv run <command>` to execute commands in the virtual environment
 
 ### Virtual Environments
-- Always use virtual environments for projects
+- Use `uv venv` to create virtual environments
+- Use `uv run` to execute commands in the virtual environment
 - Include `.venv/` in `.gitignore`
 - Document environment setup in README
 
@@ -156,8 +169,8 @@ project/
 │       └── utils/
 ├── tests/
 ├── docs/
-├── requirements.txt
-├── requirements-dev.txt
+├── pyproject.toml
+├── uv.lock
 └── README.md
 ```
 

@@ -232,6 +232,12 @@ Your choice and reasoning:
 
 ## Testing LLM Integrations
 
+### Test-First Development
+- **MANDATORY**: When generating tasks, always create unit tests and mock tests as subtasks before actual code implementation
+- **CRITICAL**: Always create unit tests and mock tests before implementing LLM provider code
+- Write tests for error handling scenarios before implementing error handling
+- **ALWAYS** check `pyproject.toml` for existing test dependencies before adding new ones with `uv add --dev`
+
 ### Mock Responses
 Create realistic mock responses for testing:
 

@@ -121,11 +121,18 @@ class LLMResponse:
 
 ## Testing Strategy
 
+### Test-First Development
+- **MANDATORY**: When generating tasks, always create unit tests and mock tests as subtasks before actual code implementation
+- **CRITICAL**: Tests must be created as subtasks before any implementation work begins
+- Write tests before implementing functionality
+- Use Test-Driven Development (TDD) approach where appropriate
+
 ### Unit Tests
 - Test each module independently
 - Mock external API calls
 - Use pytest fixtures for common test data
 - Aim for >90% code coverage
+- **ALWAYS** check dependencies in `pyproject.toml` before adding test dependencies with `uv add --dev`
 
 ### Integration Tests
 - Test full benchmark execution flow
