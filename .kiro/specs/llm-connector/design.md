@@ -4,6 +4,33 @@
 
 The LLM Connector feature provides a unified interface for connecting to multiple Large Language Model providers through a configuration-driven approach. The design follows the existing project architecture with modular components, comprehensive error handling, and extensible provider support. The connector abstracts provider-specific implementations behind a common interface while supporting provider-specific parameters and authentication methods.
 
+## Development Standards
+
+### Package Management
+The LLM connector follows strict dependency management practices:
+- **ALWAYS** use `uv` for dependency management with `pyproject.toml` - never use `pip`
+- **CRITICAL**: Before adding any dependencies, always check whether they have already been added to `pyproject.toml`
+- Use `uv add <package>` for production dependencies
+- Use `uv add --dev <package>` for development dependencies
+- Use `uv sync` to install dependencies from lock file
+- Use `uv run <command>` to execute commands in the virtual environment
+
+### Test-First Development
+The implementation follows strict Test-Driven Development (TDD) practices:
+- **MANDATORY**: All unit tests and mock tests must be created as subtasks before actual code implementation
+- **CRITICAL**: Tests must be created as subtasks before any implementation work begins
+- Write tests before implementing functionality
+- Use pytest as the testing framework (check `pyproject.toml` first, add with `uv add --dev pytest` if not present)
+- Use pytest-mock for mocking (check `pyproject.toml` first, add with `uv add --dev pytest-mock` if not present)
+
+### Code Style Standards
+- Use 2 spaces for indentation (not the standard 4 spaces)
+- Use type hints for all function parameters and return values
+- Use Google-style docstrings for all public functions and classes
+- Follow snake_case for variables and functions, PascalCase for classes
+- Use f-strings for string interpolation
+- Use double quotes for strings by default
+
 ## Architecture
 
 ### High-Level Architecture
