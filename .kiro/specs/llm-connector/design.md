@@ -116,23 +116,25 @@ class LLMConfig:
 
 @dataclass
 class ModelRequest:
-  """Request parameters for LLM generation."""
+  """Request parameters for LLM generation with conversation history support."""
   prompt: str
   model: str
   temperature: float = 0.7
   max_tokens: int = 1000
   system_prompt: Optional[str] = None
   stop_sequences: Optional[List[str]] = None
+  conversation_history: Optional[List[Dict[str, str]]] = None
   provider_specific: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class ModelResponse:
-  """Standardized response from LLM providers."""
+  """Standardized response from LLM providers with updated conversation history."""
   text: str
   model: str
   provider: str
   timestamp: datetime
   latency_ms: int
+  updated_conversation_history: Optional[List[Dict[str, str]]] = None
   token_count: Optional[int] = None
   finish_reason: Optional[str] = None
   cost_estimate: Optional[float] = None
@@ -598,26 +600,103 @@ class HTTPClient:
 #### Conversation Context Management
 
 ```python
+@dataclass
+class ConversationHistoryMetadata:
+  """Metadata about conversation history processing."""
+  total_tokens: int
+  truncated: bool = False
+  truncated_messages: int = 0
+  truncation_reason: Optional[str] = None
+
 class ConversationContext:
-  """Manages conversation history for maintaining context across questions."""
+  """Enhanced conversation history manager for maintaining context across questions.
   
-  def __init__(self, model: str, provider: str):
+  This class provides comprehensive conversation history management with support
+  for automatic truncation, validation, serialization, and thread-safe operations.
+  """
+  
+  def __init__(self, model: str, provider: str, max_context_tokens: Optional[int] = None):
     self.model = model
     self.provider = provider
     self.messages: List[Dict[str, str]] = []
     self.system_prompt: Optional[str] = None
+    self.max_context_tokens = max_context_tokens
+    self._lock = asyncio.Lock()
+    self.metadata = ConversationHistoryMetadata(total_tokens=0)
+  
+  @classmethod
+  def from_history(cls, model: str, provider: str, conversation_history: List[Dict[str, str]], 
+                   max_context_tokens: Optional[int] = None) -> "ConversationContext":
+    """Create ConversationContext from existing conversation history.
+    
+    Args:
+      model: The model name
+      provider: The provider name  
+      conversation_history: List of message dictionaries with 'role' and 'content'
+      max_context_tokens: Maximum context window size for truncation
+      
+    Returns:
+      ConversationContext instance with loaded history
+      
+    Raises:
+      ConversationHistoryError: If history format is invalid
+    """
+    context = cls(model, provider, max_context_tokens)
+    context.load_conversation_history(conversation_history)
+    return context
+  
+  def load_conversation_history(self, conversation_history: List[Dict[str, str]]) -> None:
+    """Load conversation history from a list of message dictionaries.
+    
+    Args:
+      conversation_history: List of message dictionaries
+      
+    Raises:
+      ConversationHistoryError: If history format is invalid
+    """
+    if not conversation_history:
+      return
+    
+    self._validate_conversation_history(conversation_history)
+    
+    # Extract system prompt if present
+    messages = conversation_history.copy()
+    if messages and messages[0].get("role") == "system":
+      system_message = messages.pop(0)
+      self.system_prompt = system_message["content"]
+    
+    # Load remaining messages
+    self.messages = messages
+    self._update_token_count()
   
   def add_system_prompt(self, prompt: str) -> None:
     """Set the system prompt for the conversation."""
     self.system_prompt = prompt
+    self._update_token_count()
   
-  def add_user_message(self, content: str) -> None:
-    """Add user message to conversation history."""
-    self.messages.append({"role": "user", "content": content})
+  async def add_user_message(self, content: str) -> None:
+    """Add user message to conversation history with thread safety."""
+    async with self._lock:
+      self.messages.append({"role": "user", "content": content})
+      self._update_token_count()
+      await self._apply_truncation_if_needed()
   
-  def add_assistant_message(self, content: str) -> None:
-    """Add assistant response to conversation history."""
-    self.messages.append({"role": "assistant", "content": content})
+  async def add_assistant_message(self, content: str) -> None:
+    """Add assistant response to conversation history with thread safety."""
+    async with self._lock:
+      self.messages.append({"role": "assistant", "content": content})
+      self._update_token_count()
+      await self._apply_truncation_if_needed()
+  
+  async def add_exchange(self, user_content: str, assistant_content: str) -> None:
+    """Add a complete user-assistant exchange to the conversation."""
+    async with self._lock:
+      self.messages.extend([
+        {"role": "user", "content": user_content},
+        {"role": "assistant", "content": assistant_content}
+      ])
+      self._update_token_count()
+      await self._apply_truncation_if_needed()
   
   def get_messages(self) -> List[Dict[str, str]]:
     """Get complete message history including system prompt."""
@@ -627,9 +706,146 @@ class ConversationContext:
     messages.extend(self.messages)
     return messages
   
+  def get_conversation_history(self) -> List[Dict[str, str]]:
+    """Get conversation history in the same format as input parameter."""
+    return self.get_messages()
+  
+  def get_updated_history_with_exchange(self, user_prompt: str, assistant_response: str) -> List[Dict[str, str]]:
+    """Get updated conversation history with new exchange added.
+    
+    This method returns the conversation history with the new user prompt and
+    assistant response added, without modifying the current conversation state.
+    
+    Args:
+      user_prompt: The user's prompt
+      assistant_response: The assistant's response
+      
+    Returns:
+      Updated conversation history list
+    """
+    updated_messages = self.get_messages().copy()
+    updated_messages.extend([
+      {"role": "user", "content": user_prompt},
+      {"role": "assistant", "content": assistant_response}
+    ])
+    return updated_messages
+  
   def clear_history(self) -> None:
     """Clear conversation history while keeping system prompt."""
     self.messages = []
+    self.metadata = ConversationHistoryMetadata(total_tokens=0)
+    self._update_token_count()
+  
+  def to_json(self) -> str:
+    """Serialize conversation history to JSON format."""
+    data = {
+      "model": self.model,
+      "provider": self.provider,
+      "messages": self.get_messages(),
+      "metadata": {
+        "total_tokens": self.metadata.total_tokens,
+        "truncated": self.metadata.truncated,
+        "truncated_messages": self.metadata.truncated_messages,
+        "truncation_reason": self.metadata.truncation_reason
+      }
+    }
+    return json.dumps(data, indent=2)
+  
+  @classmethod
+  def from_json(cls, json_str: str) -> "ConversationContext":
+    """Create ConversationContext from JSON string."""
+    data = json.loads(json_str)
+    context = cls(data["model"], data["provider"])
+    context.load_conversation_history(data["messages"])
+    
+    # Restore metadata if present
+    if "metadata" in data:
+      metadata = data["metadata"]
+      context.metadata = ConversationHistoryMetadata(
+        total_tokens=metadata.get("total_tokens", 0),
+        truncated=metadata.get("truncated", False),
+        truncated_messages=metadata.get("truncated_messages", 0),
+        truncation_reason=metadata.get("truncation_reason")
+      )
+    
+    return context
+  
+  def _validate_conversation_history(self, conversation_history: List[Dict[str, str]]) -> None:
+    """Validate conversation history format."""
+    if not isinstance(conversation_history, list):
+      raise ConversationHistoryError("Conversation history must be a list")
+    
+    valid_roles = {"system", "user", "assistant"}
+    
+    for i, message in enumerate(conversation_history):
+      if not isinstance(message, dict):
+        raise ConversationHistoryError(f"Message {i} must be a dictionary")
+      
+      if "role" not in message:
+        raise ConversationHistoryError(f"Message {i} missing required 'role' field")
+      
+      if "content" not in message:
+        raise ConversationHistoryError(f"Message {i} missing required 'content' field")
+      
+      if message["role"] not in valid_roles:
+        raise ConversationHistoryError(f"Message {i} has invalid role '{message['role']}'. Must be one of: {valid_roles}")
+      
+      if not isinstance(message["content"], str):
+        raise ConversationHistoryError(f"Message {i} content must be a string")
+      
+      if not message["content"].strip():
+        raise ConversationHistoryError(f"Message {i} content cannot be empty")
+  
+  def _estimate_token_count(self, text: str) -> int:
+    """Rough estimation of token count for text."""
+    # Simple approximation: ~4 characters per token
+    return len(text) // 4
+  
+  def _update_token_count(self) -> None:
+    """Update the total token count for the conversation."""
+    total_tokens = 0
+    
+    if self.system_prompt:
+      total_tokens += self._estimate_token_count(self.system_prompt)
+    
+    for message in self.messages:
+      total_tokens += self._estimate_token_count(message["content"])
+    
+    self.metadata.total_tokens = total_tokens
+  
+  async def _apply_truncation_if_needed(self) -> None:
+    """Apply intelligent truncation if conversation exceeds context limits."""
+    if not self.max_context_tokens or self.metadata.total_tokens <= self.max_context_tokens:
+      return
+    
+    # Preserve system prompt and recent messages
+    preserved_messages = []
+    current_tokens = 0
+    
+    # Always preserve system prompt
+    if self.system_prompt:
+      current_tokens += self._estimate_token_count(self.system_prompt)
+    
+    # Preserve recent messages (working backwards)
+    for message in reversed(self.messages):
+      message_tokens = self._estimate_token_count(message["content"])
+      if current_tokens + message_tokens <= self.max_context_tokens:
+        preserved_messages.insert(0, message)
+        current_tokens += message_tokens
+      else:
+        break
+    
+    # Update conversation with truncated history
+    original_count = len(self.messages)
+    self.messages = preserved_messages
+    
+    # Update metadata
+    self.metadata.truncated = True
+    self.metadata.truncated_messages = original_count - len(preserved_messages)
+    self.metadata.truncation_reason = f"Exceeded context limit of {self.max_context_tokens} tokens"
+    
+    logger.info(f"Truncated conversation: removed {self.metadata.truncated_messages} messages, "
+                f"preserved {len(preserved_messages)} recent messages")
 ```
 
 ### Request Queue Management
@@ -1271,6 +1487,10 @@ class ResponseValidationError(LLMConnectorError):
 
 class StreamingNotSupportedError(LLMConnectorError):
   """Error when streaming is attempted but not supported."""
+  pass
+
+class ConversationHistoryError(LLMConnectorError):
+  """Conversation history validation and processing errors."""
   pass
 
 class ProviderError(LLMConnectorError):

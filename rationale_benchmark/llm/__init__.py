@@ -2,6 +2,8 @@
 
 from .exceptions import (
     ConfigurationError,
+    ConversationHistoryError,
+    LLMConnectorError,
     LLMError,
     ProviderError,
     ResponseValidationError,
@@ -16,7 +18,9 @@ from .models import (
 
 __all__ = [
     "LLMError",
+    "LLMConnectorError",
     "ConfigurationError",
+    "ConversationHistoryError",
     "ProviderError",
     "ResponseValidationError",
     "StreamingNotSupportedError",

@@ -11,6 +11,13 @@ class LLMError(Exception):
         self.cause = cause
 
 
+class LLMConnectorError(LLMError):
+    """Base exception class for LLM connector-specific errors."""
+
+    def __init__(self, message: str, cause: Optional[Exception] = None):
+        super().__init__(message, cause)
+
+
 class ConfigurationError(LLMError):
     """Raised when there are configuration-related errors."""
 
@@ -88,6 +95,24 @@ class NetworkError(LLMError):
 
     def __init__(self, message: str, cause: Optional[Exception] = None):
         super().__init__(f"Network error: {message}", cause)
+
+
+class ConversationHistoryError(LLMConnectorError):
+    """Raised when conversation history validation or processing fails."""
+
+    def __init__(
+        self,
+        message: str,
+        conversation_data: Optional[Any] = None,
+        validation_errors: Optional[list[str]] = None,
+        message_index: Optional[int] = None,
+        field_name: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.conversation_data = conversation_data
+        self.validation_errors = validation_errors or []
+        self.message_index = message_index
+        self.field_name = field_name
 
 
 class TimeoutError(LLMError):

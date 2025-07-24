@@ -16,8 +16,9 @@
   - [x] 1.3 Create custom exception classes for error handling
     - Create comprehensive exception hierarchy for configuration, provider, and validation errors
     - Implement specific exception types for streaming detection and response validation
+    - Add ConversationHistoryError for conversation history validation and processing errors
     - Add context information and error recovery suggestions to exception classes
-    - _Requirements: 1.1, 1.3, 5.1, 5.2_
+    - _Requirements: 1.1, 1.3, 5.1, 5.2, 12.7_
 
   - [x] 1.4 Create unit tests for data models
     - Write comprehensive unit tests for ProviderConfig, LLMConfig, ModelRequest, and ModelResponse data classes
@@ -29,8 +30,9 @@
   - [ ] 1.5 Create unit tests for custom exception classes
     - Write unit tests for all custom exception classes with various error scenarios
     - Test exception inheritance, error messages, and context information
+    - Test ConversationHistoryError with various conversation history validation scenarios
     - Test exception handling and error propagation patterns
-    - _Requirements: 1.1, 1.3, 5.1, 5.2_
+    - _Requirements: 1.1, 1.3, 5.1, 5.2, 12.7_
 
 - [ ] 2. Implement configuration management system
   - [ ] 2.1 Create configuration loader with YAML parsing
@@ -84,12 +86,15 @@
     - Add configurable retry limits and backoff parameters
     - _Requirements: 8.3, 10.1_
 
-  - [ ] 3.3 Implement conversation context management
-    - Create ConversationContext class for managing conversation history using 2-space indentation
-    - Implement methods for adding system prompts, user messages, and assistant responses
-    - Add functionality to maintain context across multiple questions
-    - Implement conversation history clearing while preserving system prompts
-    - _Requirements: 4.3, 11.1, 11.2_
+  - [ ] 3.3 Implement enhanced conversation context management with history support
+    - Create ConversationContext class for comprehensive conversation history management using 2-space indentation
+    - Implement methods for loading conversation history from list of message dictionaries
+    - Add functionality for adding system prompts, user messages, and assistant responses with thread safety
+    - Implement automatic truncation when conversation exceeds context limits while preserving system prompts
+    - Add conversation history validation with proper error handling using ConversationHistoryError
+    - Implement JSON serialization and deserialization for conversation persistence
+    - Add metadata tracking for token usage and truncation information
+    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14_
 
   - [ ] 3.4 Create unit tests for HTTP client
     - Write unit tests for HTTPClient class with connection pooling scenarios
@@ -103,11 +108,15 @@
     - Test different error types and retry strategies
     - _Requirements: 8.3, 10.1_
 
-  - [ ] 3.6 Create unit tests for conversation context management
-    - Write unit tests for ConversationContext class with various conversation scenarios
-    - Test system prompt handling, message history management, and context preservation
+  - [ ] 3.6 Create unit tests for enhanced conversation context management
+    - Write comprehensive unit tests for ConversationContext class with various conversation scenarios
+    - Test conversation history loading from list of message dictionaries with validation
+    - Test system prompt handling, message history management, and context preservation with thread safety
+    - Test automatic truncation functionality and metadata tracking
+    - Test JSON serialization and deserialization for conversation persistence
+    - Test conversation history validation and ConversationHistoryError scenarios
     - Test conversation clearing functionality and edge cases
-    - _Requirements: 4.3, 11.1, 11.2_
+    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14_
 
 - [ ] 4. Create abstract provider interface
   - [ ] 4.1 Write LLMProvider abstract base class
@@ -129,12 +138,13 @@
     - Add support for GPT-4, GPT-3.5-turbo, and other OpenAI models
     - _Requirements: 2.1, 7.1, 7.2, 7.3_
 
-  - [ ] 5.2 Implement OpenAI request/response handling
-    - Write _prepare_request method to convert ModelRequest to OpenAI format using 2-space indentation
-    - Implement _parse_response method to convert OpenAI response to ModelResponse
-    - Add support for common parameters (temperature, max_tokens, system_prompt)
+  - [ ] 5.2 Implement OpenAI request/response handling with conversation history support
+    - Write _prepare_request method to convert ModelRequest to OpenAI format with conversation history using 2-space indentation
+    - Implement _parse_response method to convert OpenAI response to ModelResponse with updated conversation history
+    - Add support for common parameters (temperature, max_tokens, system_prompt) and conversation history
     - Implement comprehensive response structure validation for OpenAI responses
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
+    - Add conversation history processing to include previous messages in OpenAI chat format
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
 
   - [ ] 5.3 Create unit tests for OpenAI provider
     - Write comprehensive unit tests for OpenAIProvider class with mock API responses
@@ -143,12 +153,13 @@
     - Check `pyproject.toml` for existing test dependencies before adding pytest-mock with `uv add --dev pytest-mock`
     - _Requirements: 2.1, 7.1, 7.2, 7.3_
 
-  - [ ] 5.4 Create unit tests for OpenAI request/response handling
-    - Write unit tests for _prepare_request and _parse_response methods
-    - Test parameter conversion and response parsing with various scenarios
+  - [ ] 5.4 Create unit tests for OpenAI request/response handling with conversation history
+    - Write unit tests for _prepare_request and _parse_response methods with conversation history scenarios
+    - Test parameter conversion and response parsing with various scenarios including conversation history
+    - Test conversation history processing and updated history generation
     - Test error handling for malformed responses and API errors
     - Test comprehensive response structure validation scenarios
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
 
 - [ ] 6. Implement Anthropic provider
   - [ ] 6.1 Create Anthropic provider class
@@ -157,12 +168,13 @@
     - Add support for Claude models (Opus, Sonnet, Haiku)
     - _Requirements: 2.2, 7.1, 7.2, 7.3_
 
-  - [ ] 6.2 Implement Anthropic request/response handling
-    - Write _prepare_request method to convert ModelRequest to Anthropic format using 2-space indentation
-    - Implement _parse_response method to convert Anthropic response to ModelResponse
-    - Handle Anthropic-specific message formatting and system prompts
+  - [ ] 6.2 Implement Anthropic request/response handling with conversation history support
+    - Write _prepare_request method to convert ModelRequest to Anthropic format with conversation history using 2-space indentation
+    - Implement _parse_response method to convert Anthropic response to ModelResponse with updated conversation history
+    - Handle Anthropic-specific message formatting, system prompts, and conversation history
     - Implement comprehensive response structure validation for Anthropic responses
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
+    - Add conversation history processing to include previous messages in Anthropic message format
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
 
   - [ ] 6.3 Create unit tests for Anthropic provider
     - Write comprehensive unit tests for AnthropicProvider class with mock API responses
@@ -170,12 +182,13 @@
     - Test support for Claude models (Opus, Sonnet, Haiku)
     - _Requirements: 2.2, 7.1, 7.2, 7.3_
 
-  - [ ] 6.4 Create unit tests for Anthropic request/response handling
-    - Write unit tests for _prepare_request and _parse_response methods
-    - Test Anthropic-specific message formatting and system prompt handling
+  - [ ] 6.4 Create unit tests for Anthropic request/response handling with conversation history
+    - Write unit tests for _prepare_request and _parse_response methods with conversation history scenarios
+    - Test Anthropic-specific message formatting, system prompt handling, and conversation history processing
+    - Test conversation history processing and updated history generation
     - Test error handling for various response scenarios
     - Test comprehensive response structure validation scenarios
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
 
 - [ ] 7. Implement Gemini provider
   - [ ] 7.1 Create Gemini provider class
@@ -293,12 +306,13 @@
     - Add streaming parameter validation and removal at client level
     - _Requirements: 5.5, 9.2, 11.8, 11.9_
 
-  - [ ] 11.2 Implement single response generation with sequential processing
-    - Write generate_response method to route single requests through provider queues using 2-space indentation
-    - Add comprehensive request validation including streaming parameter removal
+  - [ ] 11.2 Implement single response generation with conversation history support
+    - Write generate_response method to route single requests through provider queues with conversation history using 2-space indentation
+    - Add comprehensive request validation including streaming parameter removal and conversation history validation
     - Implement response validation at client level as additional safety layer
-    - Add detailed error handling with provider context
-    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7_
+    - Add conversation history processing to return updated history with new exchange
+    - Add detailed error handling with provider context and conversation history errors
+    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7, 12.1, 12.2, 12.3, 12.11, 12.12_
 
   - [ ] 11.3 Implement concurrent response generation
     - Write generate_responses_concurrent method for processing multiple requests using 2-space indentation
@@ -320,11 +334,12 @@
     - Test error handling and client-level validation scenarios
     - _Requirements: 5.5, 9.2, 11.8, 11.9_
 
-  - [ ] 11.6 Create unit tests for single response generation
-    - Write unit tests for generate_response method with various request scenarios
-    - Test request validation, streaming parameter removal, and error handling
+  - [ ] 11.6 Create unit tests for single response generation with conversation history
+    - Write unit tests for generate_response method with various request scenarios including conversation history
+    - Test request validation, streaming parameter removal, conversation history validation, and error handling
+    - Test conversation history processing and updated history generation
     - Test response validation at client level and provider context handling
-    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7_
+    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7, 12.1, 12.2, 12.3, 12.11, 12.12_
 
   - [ ] 11.7 Create unit tests for concurrent response generation
     - Write unit tests for generate_responses_concurrent method with multiple request scenarios
