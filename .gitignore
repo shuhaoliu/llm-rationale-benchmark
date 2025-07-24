@@ -42,6 +42,9 @@ db.sqlite3-journal
 instance/
 .webassets-cache
 
+# Ruff stuff:
+.ruff_cache
+
 # Scrapy stuff:
 .scrapy
 
@@ -104,6 +107,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# uv
+uv.lock
 
 # Spyder project settings
 .spyderproject

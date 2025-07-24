@@ -17,16 +17,35 @@ This project provides a command-line tool for testing different LLMs against hum
 
 ## Installation
 
+### Prerequisites
+- Python 3.9 or higher
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
+
+### Setup
+
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd rationale-benchmark
 
-# Install dependencies
-pip install -r requirements.txt
+# Create virtual environment and install dependencies
+uv sync
 
 # Install the package in development mode
-pip install -e .
+uv add -e .
+```
+
+### Alternative: Development Setup
+
+```bash
+# Create virtual environment
+uv venv
+
+# Install all dependencies including development tools
+uv sync --dev
+
+# Activate the virtual environment (optional, uv run handles this automatically)
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 ## Quick Start
@@ -37,16 +56,16 @@ pip install -e .
 
 ```bash
 # Run all questionnaires with default LLM config
-python -m rationale_benchmark
+uv run rationale-benchmark
 
 # Run specific questionnaire with default LLMs
-python -m rationale_benchmark --questionnaire moral-reasoning
+uv run rationale-benchmark --questionnaire moral-reasoning
 
 # Run specific questionnaire with custom LLM config
-python -m rationale_benchmark --questionnaire cognitive-biases --llm-config research-models
+uv run rationale-benchmark --questionnaire cognitive-biases --llm-config research-models
 
 # Run multiple questionnaires
-python -m rationale_benchmark --questionnaires moral-reasoning,cognitive-biases
+uv run rationale-benchmark --questionnaires moral-reasoning,cognitive-biases
 ```
 
 ## Configuration
@@ -293,32 +312,37 @@ rationale-benchmark/
 ### Setting up Development Environment
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install development dependencies
-pip install -r requirements-dev.txt
+# Create virtual environment and install all dependencies
+uv sync --dev
 
 # Run tests
-pytest
+uv run pytest
+
+# Run code formatting
+uv run black rationale_benchmark/
 
 # Run linting
-flake8 rationale_benchmark/
-black rationale_benchmark/
+uv run ruff check rationale_benchmark/
+
+# Run type checking
+uv run mypy rationale_benchmark/
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage
-pytest --cov=rationale_benchmark
+uv run pytest --cov=rationale_benchmark
 
 # Run specific test file
-pytest tests/test_questionnaire.py
+uv run pytest tests/test_questionnaire.py
+
+# Generate coverage report
+uv run coverage report
+uv run coverage html  # Generate HTML coverage report
 ```
 
 ## Roadmap
