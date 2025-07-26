@@ -253,6 +253,88 @@ class ConfigLoader:
         config_file=str(yaml_path)
       )
 
+  def load_single_config(self, config_name: Optional[str] = None) -> LLMConfig:
+    """Load a single specified configuration file with default selection support.
+    
+    This method implements the core functionality for loading a single configuration
+    file as specified in task 2.2. It provides:
+    - Loading of a single specified configuration file
+    - Default configuration file selection when none specified
+    - Proper error handling for missing configuration files
+    - Complete configuration structure validation
+    
+    Args:
+      config_name: Name of configuration file without .yaml extension.
+                  If None, uses "default-llms" as default.
+      
+    Returns:
+      LLMConfig instance with resolved environment variables and validated structure
+      
+    Raises:
+      ConfigurationError: If file not found, invalid YAML, environment variables missing,
+                         or configuration structure is invalid
+    """
+    # Use default configuration name if none specified (Requirement 1.2)
+    if config_name is None:
+      config_name = "default-llms"
+    
+    # Determine the configuration file path, preferring .yaml over .yml
+    config_file = None
+    yaml_path = self.config_dir / f"{config_name}.yaml"
+    yml_path = self.config_dir / f"{config_name}.yml"
+    
+    if yaml_path.exists():
+      config_file = yaml_path
+    elif yml_path.exists():
+      config_file = yml_path
+    else:
+      # Proper error handling for missing configuration files (Task requirement)
+      raise ConfigurationError(
+        f"Configuration file not found: {config_name}.yaml or {config_name}.yml",
+        config_file=str(yaml_path)
+      )
+    
+    # Load and parse the YAML file
+    try:
+      with open(config_file, 'r', encoding='utf-8') as f:
+        config_dict = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+      raise ConfigurationError(
+        f"Invalid YAML in configuration file: {e}",
+        config_file=str(config_file)
+      )
+    except Exception as e:
+      raise ConfigurationError(
+        f"Error reading configuration file: {e}",
+        config_file=str(config_file)
+      )
+    
+    # Validate that the file is not empty
+    if config_dict is None:
+      raise ConfigurationError(
+        "Configuration file is empty",
+        config_file=str(config_file)
+      )
+    
+    # Validate that the content is a dictionary
+    if not isinstance(config_dict, dict):
+      raise ConfigurationError(
+        "Configuration file must contain a YAML dictionary",
+        config_file=str(config_file)
+      )
+    
+    # Resolve environment variables with proper error context
+    try:
+      resolved_config = self._resolve_environment_variables(config_dict)
+    except ConfigurationError as e:
+      # Add config file context to environment variable errors
+      e.config_file = str(config_file)
+      raise e
+    
+    # Create and validate LLMConfig from resolved dictionary (Requirement 5.4)
+    # This ensures complete configuration structure validation
+    return LLMConfig.from_dict(resolved_config, str(config_file))
+
   def create_config_directory(self) -> None:
     """Create the configuration directory if it doesn't exist.
     
