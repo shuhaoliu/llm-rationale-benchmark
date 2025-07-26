@@ -15,6 +15,7 @@ from .models import (
     ModelResponse,
     ProviderConfig,
 )
+from .providers import LLMProvider
 
 __all__ = [
     "LLMError",
@@ -28,4 +29,5 @@ __all__ = [
     "LLMConfig",
     "ModelRequest",
     "ModelResponse",
+    "LLMProvider",
 ]
