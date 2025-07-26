@@ -433,3 +433,400 @@ class TestConfigLoader:
       config = config_loader.load_config("utf8-test")
 
     assert isinstance(config, LLMConfig)
+
+  def test_load_single_config_loads_specified_config(self, config_loader, temp_config_dir, sample_config_dict):
+    """Test that load_single_config loads the specified configuration file."""
+    # Create test config file
+    config_file = temp_config_dir / "custom-config.yaml"
+    with open(config_file, 'w') as f:
+      yaml.dump(sample_config_dict, f, indent=2)
+
+    with patch.dict(os.environ, {
+      'OPENAI_API_KEY': 'test-openai-key',
+      'ANTHROPIC_API_KEY': 'test-anthropic-key'
+    }):
+      config = config_loader.load_single_config("custom-config")
+
+    assert isinstance(config, LLMConfig)
+    assert config.defaults["timeout"] == 30
+    assert "openai" in config.providers
+    assert "anthropic" in config.providers
+    assert config.providers["openai"].api_key == "test-openai-key"
+
+  def test_load_single_config_uses_default_when_none_specified(self, config_loader, temp_config_dir, sample_config_dict):
+    """Test that load_single_config uses 'default-llms' when config_name is None."""
+    # Create default config file
+    config_file = temp_config_dir / "default-llms.yaml"
+    with open(config_file, 'w') as f:
+      yaml.dump(sample_config_dict, f, indent=2)
+
+    with patch.dict(os.environ, {
+      'OPENAI_API_KEY': 'test-key',
+      'ANTHROPIC_API_KEY': 'test-key'
+    }):
+      config = config_loader.load_single_config(None)
+
+    assert isinstance(config, LLMConfig)
+    assert "openai" in config.providers
+
+  def test_load_single_config_prefers_yaml_over_yml(self, config_loader, temp_config_dir, sample_config_dict):
+    """Test that load_single_config prefers .yaml over .yml when both exist."""
+    # Create both .yaml and .yml files
+    yaml_file = temp_config_dir / "test-config.yaml"
+    yml_file = temp_config_dir / "test-config.yml"
+    
+    # Different content to verify which file is loaded - use deep copy to avoid modifying original
+    import copy
+    yaml_config = copy.deepcopy(sample_config_dict)
+    yaml_config["defaults"]["timeout"] = 45
+    
+    yml_config = copy.deepcopy(sample_config_dict)
+    yml_config["defaults"]["timeout"] = 60
+
+    with open(yaml_file, 'w') as f:
+      yaml.dump(yaml_config, f, indent=2)
+    with open(yml_file, 'w') as f:
+      yaml.dump(yml_config, f, indent=2)
+
+    with patch.dict(os.environ, {
+      'OPENAI_API_KEY': 'test-key',
+      'ANTHROPIC_API_KEY': 'test-key'
+    }):
+      config = config_loader.load_single_config("test-config")
+
+    # Should load .yaml file (timeout=45), not .yml file (timeout=60)
+    assert config.defaults["timeout"] == 45
+
+  def test_load_single_config_loads_yml_when_yaml_missing(self, config_loader, temp_config_dir, sample_config_dict):
+    """Test that load_single_config loads .yml file when .yaml doesn't exist."""
+    # Create only .yml file
+    yml_file = temp_config_dir / "yml-only.yml"
+    with open(yml_file, 'w') as f:
+      yaml.dump(sample_config_dict, f, indent=2)
+
+    with patch.dict(os.environ, {
+      'OPENAI_API_KEY': 'test-key',
+      'ANTHROPIC_API_KEY': 'test-key'
+    }):
+      config = config_loader.load_single_config("yml-only")
+
+    assert isinstance(config, LLMConfig)
+    assert "openai" in config.providers
+
+  def test_load_single_config_raises_error_for_missing_file(self, config_loader):
+    """Test that load_single_config raises ConfigurationError for missing file."""
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader.load_single_config("nonexistent")
+
+    assert "Configuration file not found" in str(exc_info.value)
+    assert "nonexistent.yaml or nonexistent.yml" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_load_single_config_raises_error_for_invalid_yaml(self, config_loader, temp_config_dir):
+    """Test that load_single_config raises ConfigurationError for invalid YAML."""
+    # Create invalid YAML file
+    config_file = temp_config_dir / "invalid-single.yaml"
+    with open(config_file, 'w') as f:
+      f.write("invalid: yaml: content: [\n")
+
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader.load_single_config("invalid-single")
+
+    assert "Invalid YAML" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_load_single_config_raises_error_for_empty_file(self, config_loader, temp_config_dir):
+    """Test that load_single_config raises ConfigurationError for empty file."""
+    # Create empty file
+    config_file = temp_config_dir / "empty-single.yaml"
+    config_file.touch()
+
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader.load_single_config("empty-single")
+
+    assert "Configuration file is empty" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_load_single_config_raises_error_for_non_dict_yaml(self, config_loader, temp_config_dir):
+    """Test that load_single_config raises ConfigurationError for non-dictionary YAML."""
+    # Create YAML file with list instead of dict
+    config_file = temp_config_dir / "list-single.yaml"
+    with open(config_file, 'w') as f:
+      yaml.dump(["item1", "item2"], f)
+
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader.load_single_config("list-single")
+
+    assert "must contain a YAML dictionary" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_load_single_config_resolves_environment_variables(self, config_loader, temp_config_dir):
+    """Test that load_single_config resolves environment variables correctly."""
+    config_dict = {
+      "defaults": {"timeout": 30},
+      "providers": {
+        "test": {
+          "api_key": "${TEST_SINGLE_API_KEY}",
+          "base_url": "https://${TEST_SINGLE_HOST}/api"
+        }
+      }
+    }
+
+    config_file = temp_config_dir / "env-single-test.yaml"
+    with open(config_file, 'w') as f:
+      yaml.dump(config_dict, f, indent=2)
+
+    with patch.dict(os.environ, {
+      'TEST_SINGLE_API_KEY': 'single-secret-key',
+      'TEST_SINGLE_HOST': 'single.example.com'
+    }):
+      config = config_loader.load_single_config("env-single-test")
+
+    assert config.providers["test"].api_key == "single-secret-key"
+    assert config.providers["test"].base_url == "https://single.example.com/api"
+
+  def test_load_single_config_raises_error_for_missing_env_var(self, config_loader, temp_config_dir):
+    """Test that load_single_config raises ConfigurationError for missing environment variables."""
+    config_dict = {
+      "defaults": {},
+      "providers": {
+        "test": {
+          "api_key": "${MISSING_SINGLE_API_KEY}"
+        }
+      }
+    }
+
+    config_file = temp_config_dir / "missing-env-single.yaml"
+    with open(config_file, 'w') as f:
+      yaml.dump(config_dict, f, indent=2)
+
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader.load_single_config("missing-env-single")
+
+    assert "Environment variable 'MISSING_SINGLE_API_KEY' is not set" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_load_single_config_handles_file_read_errors(self, config_loader, temp_config_dir):
+    """Test that load_single_config handles file read errors gracefully."""
+    # Create a file and then make it unreadable (simulate permission error)
+    config_file = temp_config_dir / "unreadable.yaml"
+    config_file.write_text("defaults: {}\nproviders: {}")
+    
+    # Mock open to raise a permission error
+    with patch('builtins.open', side_effect=PermissionError("Permission denied")):
+      with pytest.raises(ConfigurationError) as exc_info:
+        config_loader.load_single_config("unreadable")
+
+    assert "Error reading configuration file" in str(exc_info.value)
+    assert "Permission denied" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_load_config_handles_file_read_errors(self, config_loader, temp_config_dir):
+    """Test that load_config handles file read errors gracefully."""
+    # Create a file and then make it unreadable (simulate permission error)
+    config_file = temp_config_dir / "unreadable-main.yaml"
+    config_file.write_text("defaults: {}\nproviders: {}")
+    
+    # Mock open to raise a permission error
+    with patch('builtins.open', side_effect=PermissionError("Permission denied")):
+      with pytest.raises(ConfigurationError) as exc_info:
+        config_loader.load_config("unreadable-main")
+
+    assert "Error reading configuration file" in str(exc_info.value)
+    assert "Permission denied" in str(exc_info.value)
+    assert exc_info.value.config_file is not None
+
+  def test_resolve_environment_variables_handles_empty_strings(self, config_loader):
+    """Test that _resolve_environment_variables handles empty environment variables."""
+    config_dict = {
+      "test_field": "${EMPTY_VAR}"
+    }
+
+    with patch.dict(os.environ, {'EMPTY_VAR': ''}):
+      resolved = config_loader._resolve_environment_variables(config_dict)
+
+    assert resolved["test_field"] == ""
+
+  def test_resolve_environment_variables_handles_special_characters(self, config_loader):
+    """Test that _resolve_environment_variables handles special characters in environment variables."""
+    config_dict = {
+      "special_chars": "${SPECIAL_VAR}"
+    }
+
+    with patch.dict(os.environ, {'SPECIAL_VAR': 'value with spaces & symbols!@#$%^&*()'}):
+      resolved = config_loader._resolve_environment_variables(config_dict)
+
+    assert resolved["special_chars"] == "value with spaces & symbols!@#$%^&*()"
+
+  def test_resolve_environment_variables_handles_numeric_env_vars(self, config_loader):
+    """Test that _resolve_environment_variables handles numeric environment variables."""
+    config_dict = {
+      "numeric_field": "${NUMERIC_VAR}",
+      "mixed_field": "port-${PORT_VAR}"
+    }
+
+    with patch.dict(os.environ, {
+      'NUMERIC_VAR': '12345',
+      'PORT_VAR': '8080'
+    }):
+      resolved = config_loader._resolve_environment_variables(config_dict)
+
+    assert resolved["numeric_field"] == "12345"
+    assert resolved["mixed_field"] == "port-8080"
+
+  def test_resolve_environment_variables_handles_boolean_like_env_vars(self, config_loader):
+    """Test that _resolve_environment_variables handles boolean-like environment variables."""
+    config_dict = {
+      "bool_field": "${BOOL_VAR}",
+      "flag_field": "${FLAG_VAR}"
+    }
+
+    with patch.dict(os.environ, {
+      'BOOL_VAR': 'true',
+      'FLAG_VAR': 'false'
+    }):
+      resolved = config_loader._resolve_environment_variables(config_dict)
+
+    assert resolved["bool_field"] == "true"
+    assert resolved["flag_field"] == "false"
+
+  def test_resolve_environment_variables_handles_deeply_nested_structures(self, config_loader):
+    """Test that _resolve_environment_variables handles deeply nested data structures."""
+    config_dict = {
+      "level1": {
+        "level2": {
+          "level3": {
+            "level4": {
+              "deep_var": "${DEEP_VAR}",
+              "deep_list": ["${ITEM1}", {"nested_deep": "${ITEM2}"}]
+            }
+          }
+        }
+      }
+    }
+
+    with patch.dict(os.environ, {
+      'DEEP_VAR': 'deep_value',
+      'ITEM1': 'list_item1',
+      'ITEM2': 'nested_item2'
+    }):
+      resolved = config_loader._resolve_environment_variables(config_dict)
+
+    assert resolved["level1"]["level2"]["level3"]["level4"]["deep_var"] == "deep_value"
+    assert resolved["level1"]["level2"]["level3"]["level4"]["deep_list"][0] == "list_item1"
+    assert resolved["level1"]["level2"]["level3"]["level4"]["deep_list"][1]["nested_deep"] == "nested_item2"
+
+  def test_resolve_environment_variables_provides_detailed_path_context(self, config_loader):
+    """Test that _resolve_environment_variables provides detailed path context for nested errors."""
+    config_dict = {
+      "providers": {
+        "openai": {
+          "auth": {
+            "api_key": "${MISSING_NESTED_KEY}"
+          }
+        }
+      }
+    }
+
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader._resolve_environment_variables(config_dict)
+
+    error_message = str(exc_info.value)
+    assert "Environment variable 'MISSING_NESTED_KEY' is not set" in error_message
+    assert "at providers.openai.auth.api_key" in error_message
+
+  def test_resolve_environment_variables_handles_list_index_paths(self, config_loader):
+    """Test that _resolve_environment_variables provides correct path context for list items."""
+    config_dict = {
+      "models": [
+        {"name": "model1", "key": "${VALID_KEY}"},
+        {"name": "model2", "key": "${MISSING_LIST_KEY}"}
+      ]
+    }
+
+    with patch.dict(os.environ, {'VALID_KEY': 'valid_value'}):
+      with pytest.raises(ConfigurationError) as exc_info:
+        config_loader._resolve_environment_variables(config_dict)
+
+    error_message = str(exc_info.value)
+    assert "Environment variable 'MISSING_LIST_KEY' is not set" in error_message
+    assert "at models[1].key" in error_message
+
+  def test_load_config_only_supports_yaml_extension(self, config_loader, temp_config_dir, sample_config_dict):
+    """Test that load_config only supports .yaml extension, not .yml."""
+    # Create config file with .yml extension only
+    config_file = temp_config_dir / "yml-config.yml"
+    with open(config_file, 'w') as f:
+      yaml.dump(sample_config_dict, f, indent=2)
+
+    # load_config should fail because it only looks for .yaml files
+    with pytest.raises(ConfigurationError) as exc_info:
+      config_loader.load_config("yml-config")
+
+    assert "Configuration file not found" in str(exc_info.value)
+    assert "yml-config.yaml" in str(exc_info.value)
+
+  def test_list_available_configs_handles_mixed_extensions(self, config_loader, temp_config_dir):
+    """Test that list_available_configs handles both .yaml and .yml extensions correctly."""
+    # Create files with both extensions
+    (temp_config_dir / "config1.yaml").touch()
+    (temp_config_dir / "config2.yml").touch()
+    (temp_config_dir / "config3.yaml").touch()
+    (temp_config_dir / "config4.yml").touch()
+    (temp_config_dir / "not-config.txt").touch()
+    (temp_config_dir / "also-not-config.json").touch()
+
+    configs = config_loader.list_available_configs()
+
+    assert sorted(configs) == ["config1", "config2", "config3", "config4"]
+
+  def test_discover_config_files_handles_empty_directory(self, config_loader):
+    """Test that discover_config_files returns empty dict for directory with no YAML files."""
+    configs = config_loader.discover_config_files()
+    assert configs == {}
+
+  def test_validate_config_file_handles_missing_file(self, config_loader):
+    """Test that validate_config_file returns False for missing file."""
+    is_valid, error = config_loader.validate_config_file("nonexistent")
+
+    assert is_valid is False
+    assert error is not None
+    assert "Configuration file not found" in error
+
+  def test_validate_config_file_handles_unexpected_errors(self, config_loader, temp_config_dir):
+    """Test that validate_config_file handles unexpected errors gracefully."""
+    # Create a minimal config that won't fail on environment variables
+    minimal_config = {
+      "defaults": {},
+      "providers": {
+        "test": {
+          "api_key": "test-key"  # No environment variable to avoid that error
+        }
+      }
+    }
+    
+    config_file = temp_config_dir / "test-unexpected.yaml"
+    with open(config_file, 'w') as f:
+      yaml.dump(minimal_config, f, indent=2)
+
+    # Mock the load_config method to raise an unexpected error
+    with patch.object(config_loader, 'load_config', side_effect=RuntimeError("Unexpected error")):
+      is_valid, error = config_loader.validate_config_file("test-unexpected")
+
+    assert is_valid is False
+    assert error is not None
+    assert "Unexpected error" in error
+
+  def test_create_config_directory_handles_permission_errors(self, temp_config_dir):
+    """Test that create_config_directory handles permission errors gracefully."""
+    # Create a path that would cause permission error
+    restricted_dir = temp_config_dir / "restricted" / "config"
+    loader = ConfigLoader(restricted_dir)
+
+    # Mock mkdir to raise permission error
+    with patch.object(Path, 'mkdir', side_effect=PermissionError("Permission denied")):
+      with pytest.raises(ConfigurationError) as exc_info:
+        loader.create_config_directory()
+
+    assert "Failed to create configuration directory" in str(exc_info.value)
+    assert "Permission denied" in str(exc_info.value)
