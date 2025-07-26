@@ -246,22 +246,25 @@ class TestLLMConfig:
     with pytest.raises(ConfigurationError, match="Provider 'openai' configuration must be a dictionary"):
       LLMConfig.from_dict(config_dict)
 
-  def test_llm_config_from_dict_raises_error_for_provider_config_type_error(self):
-    """Test that from_dict raises error when ProviderConfig creation fails with TypeError."""
-    # Arrange - Create config that will cause TypeError in ProviderConfig creation
+  def test_llm_config_from_dict_handles_unknown_fields_gracefully(self):
+    """Test that from_dict handles unknown fields by putting them in default_params."""
+    # Arrange - Create config with unknown field
     config_dict = {
       "defaults": {},
       "providers": {
         "openai": {
           "api_key": "sk-test123",
-          "invalid_field": "value"  # This will cause TypeError
+          "unknown_field": "value"  # This should go to default_params
         }
       }
     }
 
-    # Act & Assert
-    with pytest.raises(ConfigurationError, match="Invalid configuration for provider 'openai'"):
-      LLMConfig.from_dict(config_dict)
+    # Act
+    config = LLMConfig.from_dict(config_dict)
+
+    # Assert - Unknown field should be in default_params
+    assert "unknown_field" in config.providers["openai"].default_params
+    assert config.providers["openai"].default_params["unknown_field"] == "value"
 
   def test_llm_config_from_file_loads_valid_yaml(self):
     """Test that from_file loads valid YAML configuration."""

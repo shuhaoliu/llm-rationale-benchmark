@@ -32,11 +32,20 @@
     - _Requirements: 1.1, 1.3, 5.1, 5.2_
 
 - [ ] 2. Implement configuration management system
-  - [ ] 2.1 Create configuration loader with YAML parsing
-    - Write ConfigLoader class to load and parse YAML configuration files using 2-space indentation
-    - Implement environment variable resolution for ${VAR} patterns
-    - Add support for discovering configuration files in config/llms directory
+  - [x] 2.1 Create configuration loader with YAML parsing
+    - Write ConfigLoader class to load and parse YAML configuration files using 2-space indentation ✅
+    - Implement environment variable resolution for ${VAR} patterns ✅
+    - Add support for discovering configuration files in config/llms directory ✅
     - _Requirements: 1.1, 1.4, 10.1, 10.4_
+    
+    **Implementation Summary:**
+    - Created `ConfigLoader` class in `rationale_benchmark/llm/config/loader.py`
+    - Supports loading YAML configuration files with proper error handling
+    - Implements recursive environment variable resolution for `${VAR}` patterns
+    - Provides configuration file discovery and validation methods
+    - Includes comprehensive unit tests with 28 test cases covering all functionality
+    - Properly handles 2-space indentation as specified in Python standards
+    - Integrates with existing `LLMConfig` and `ProviderConfig` data models
 
   - [ ] 2.2 Implement single configuration file loading
     - Write functionality to load a single specified configuration file using 2-space indentation

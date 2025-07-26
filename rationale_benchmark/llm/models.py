@@ -150,11 +150,49 @@ class LLMConfig:
                 )
 
             try:
-                # Merge with defaults
+                # Define ProviderConfig direct fields vs fields that go to default_params/provider_specific
+                provider_direct_fields = {
+                    "name", "api_key", "base_url", "timeout", "max_retries", "models"
+                }
+                
+                # Start with defaults and merge provider config
                 merged_config = {**defaults, **provider_config}
-                merged_config["name"] = provider_name
+                
+                # Separate direct ProviderConfig fields from default_params and provider_specific
+                config_args = {}
+                default_params = {}
+                provider_specific = {}
+                
+                # Process merged configuration
+                for key, value in merged_config.items():
+                    if key in provider_direct_fields:
+                        config_args[key] = value
+                    elif key == "default_params":
+                        # Merge existing default_params
+                        if isinstance(value, dict):
+                            default_params.update(value)
+                    elif key == "provider_specific":
+                        # Merge existing provider_specific
+                        if isinstance(value, dict):
+                            provider_specific.update(value)
+                    else:
+                        # Other fields go to default_params (like temperature, max_tokens, etc.)
+                        default_params[key] = value
+                
+                # Set required fields
+                config_args["name"] = provider_name
+                config_args["default_params"] = default_params
+                config_args["provider_specific"] = provider_specific
+                
+                # Validate required fields
+                if "api_key" not in config_args:
+                    raise ConfigurationError(
+                        f"Provider '{provider_name}' is missing required 'api_key' field",
+                        config_file=config_file,
+                        field=f"providers.{provider_name}.api_key",
+                    )
 
-                providers[provider_name] = ProviderConfig(**merged_config)
+                providers[provider_name] = ProviderConfig(**config_args)
             except TypeError as e:
                 raise ConfigurationError(
                     f"Invalid configuration for provider '{provider_name}': {e}",
