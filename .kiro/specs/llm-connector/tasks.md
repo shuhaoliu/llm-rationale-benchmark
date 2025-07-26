@@ -16,30 +16,27 @@
   - [x] 1.3 Create custom exception classes for error handling
     - Create comprehensive exception hierarchy for configuration, provider, and validation errors
     - Implement specific exception types for streaming detection and response validation
-    - Add ConversationHistoryError for conversation history validation and processing errors
     - Add context information and error recovery suggestions to exception classes
-    - _Requirements: 1.1, 1.3, 5.1, 5.2, 12.7_
+    - _Requirements: 1.1, 1.3, 5.1, 5.2_
 
   - [x] 1.4 Create unit tests for data models
     - Write comprehensive unit tests for ProviderConfig, LLMConfig, ModelRequest, and ModelResponse data classes
     - Test data model validation, serialization, and field constraints
     - Test data model creation with various valid and invalid inputs
-    - Check `pyproject.toml` for existing test dependencies before adding pytest with `uv add --dev pytest`
     - _Requirements: 1.1, 1.3, 5.1, 5.2_
 
   - [x] 1.5 Create unit tests for custom exception classes
     - Write unit tests for all custom exception classes with various error scenarios
     - Test exception inheritance, error messages, and context information
-    - Test ConversationHistoryError with various conversation history validation scenarios
     - Test exception handling and error propagation patterns
-    - _Requirements: 1.1, 1.3, 5.1, 5.2, 12.7_
+    - _Requirements: 1.1, 1.3, 5.1, 5.2_
 
 - [ ] 2. Implement configuration management system
   - [ ] 2.1 Create configuration loader with YAML parsing
     - Write ConfigLoader class to load and parse YAML configuration files using 2-space indentation
     - Implement environment variable resolution for ${VAR} patterns
     - Add support for discovering configuration files in config/llms directory
-    - _Requirements: 1.1, 1.4, 9.1, 9.4_
+    - _Requirements: 1.1, 1.4, 10.1, 10.4_
 
   - [ ] 2.2 Implement single configuration file loading
     - Write functionality to load a single specified configuration file using 2-space indentation
@@ -51,14 +48,14 @@
     - Write ConfigValidator class to validate configuration structure using 2-space indentation
     - Implement validation for required fields, data types, and value ranges
     - Add environment variable validation without exposing sensitive values
-    - _Requirements: 1.3, 1.5, 3.1, 3.2, 3.4, 4.5, 5.1, 5.2, 5.3_
+    - Add streaming parameter detection and removal with warnings
+    - _Requirements: 1.3, 1.5, 3.1, 3.2, 3.4, 4.5, 5.1, 5.2, 5.3, 11.5, 11.8_
 
   - [ ] 2.4 Create unit tests for configuration loader
     - Write comprehensive unit tests for ConfigLoader class using pytest
     - Test YAML parsing, environment variable resolution, and file discovery
     - Test error handling for malformed YAML and missing files
-    - Check `pyproject.toml` for existing test dependencies before adding pytest with `uv add --dev`
-    - _Requirements: 1.1, 1.4, 9.1, 9.4_
+    - _Requirements: 1.1, 1.4, 10.1, 10.4_
 
   - [ ] 2.5 Create unit tests for single configuration file loading
     - Write unit tests for single file loading functionality
@@ -70,53 +67,33 @@
     - Write comprehensive unit tests for ConfigValidator class
     - Test validation for required fields, data types, and value ranges
     - Test environment variable validation scenarios
-    - _Requirements: 1.3, 1.5, 3.1, 3.2, 3.4, 4.5, 5.1, 5.2, 5.3_
+    - Test streaming parameter detection and warning functionality
+    - _Requirements: 1.3, 1.5, 3.1, 3.2, 3.4, 4.5, 5.1, 5.2, 5.3, 11.5, 11.8_
 
 - [ ] 3. Build HTTP client infrastructure
   - [ ] 3.1 Implement HTTP client with connection pooling
     - Create HTTPClient class using aiohttp with connection pooling and 2-space indentation
     - Add timeout handling and connection management
     - Implement proper resource cleanup and session management
-    - Check `pyproject.toml` for existing aiohttp dependency before adding with `uv add aiohttp`
-    - _Requirements: 8.1, 8.2, 10.2_
+    - _Requirements: 8.1, 8.2, 13.2_
 
   - [ ] 3.2 Implement retry logic with exponential backoff
     - Create RetryHandler class for handling transient failures using 2-space indentation
     - Implement exponential backoff for network errors
     - Add configurable retry limits and backoff parameters
-    - _Requirements: 8.3, 10.1_
+    - _Requirements: 8.3, 13.1_
 
-  - [ ] 3.3 Implement enhanced conversation context management with history support
-    - Create ConversationContext class for comprehensive conversation history management using 2-space indentation
-    - Implement methods for loading conversation history from list of message dictionaries
-    - Add functionality for adding system prompts, user messages, and assistant responses with thread safety
-    - Implement automatic truncation when conversation exceeds context limits while preserving system prompts
-    - Add conversation history validation with proper error handling using ConversationHistoryError
-    - Implement JSON serialization and deserialization for conversation persistence
-    - Add metadata tracking for token usage and truncation information
-    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14_
-
-  - [ ] 3.4 Create unit tests for HTTP client
+  - [ ] 3.3 Create unit tests for HTTP client
     - Write unit tests for HTTPClient class with connection pooling scenarios
     - Test timeout handling, connection management, and resource cleanup
     - Test integration with RetryHandler for failed requests
-    - _Requirements: 8.1, 8.2, 10.2_
+    - _Requirements: 8.1, 8.2, 13.2_
 
-  - [ ] 3.5 Create unit tests for retry logic
+  - [ ] 3.4 Create unit tests for retry logic
     - Write unit tests for RetryHandler class with various failure scenarios
     - Test exponential backoff timing and retry limit enforcement
     - Test different error types and retry strategies
-    - _Requirements: 8.3, 10.1_
-
-  - [ ] 3.6 Create unit tests for enhanced conversation context management
-    - Write comprehensive unit tests for ConversationContext class with various conversation scenarios
-    - Test conversation history loading from list of message dictionaries with validation
-    - Test system prompt handling, message history management, and context preservation with thread safety
-    - Test automatic truncation functionality and metadata tracking
-    - Test JSON serialization and deserialization for conversation persistence
-    - Test conversation history validation and ConversationHistoryError scenarios
-    - Test conversation clearing functionality and edge cases
-    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14_
+    - _Requirements: 8.3, 13.1_
 
 - [ ] 4. Create abstract provider interface
   - [ ] 4.1 Write LLMProvider abstract base class
@@ -138,28 +115,25 @@
     - Add support for GPT-4, GPT-3.5-turbo, and other OpenAI models
     - _Requirements: 2.1, 7.1, 7.2, 7.3_
 
-  - [ ] 5.2 Implement OpenAI request/response handling with conversation history support
-    - Write _prepare_request method to convert ModelRequest to OpenAI format with conversation history using 2-space indentation
-    - Implement _parse_response method to convert OpenAI response to ModelResponse with updated conversation history
-    - Add support for common parameters (temperature, max_tokens, system_prompt) and conversation history
+  - [ ] 5.2 Implement OpenAI request/response handling
+    - Write _prepare_request method to convert ModelRequest to OpenAI format using 2-space indentation
+    - Implement _parse_response method to convert OpenAI response to ModelResponse
+    - Add support for common parameters (temperature, max_tokens, system_prompt)
     - Implement comprehensive response structure validation for OpenAI responses
-    - Add conversation history processing to include previous messages in OpenAI chat format
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
 
   - [ ] 5.3 Create unit tests for OpenAI provider
     - Write comprehensive unit tests for OpenAIProvider class with mock API responses
     - Test Bearer token authentication and API error handling
     - Test support for GPT-4, GPT-3.5-turbo, and other OpenAI models
-    - Check `pyproject.toml` for existing test dependencies before adding pytest-mock with `uv add --dev pytest-mock`
     - _Requirements: 2.1, 7.1, 7.2, 7.3_
 
-  - [ ] 5.4 Create unit tests for OpenAI request/response handling with conversation history
-    - Write unit tests for _prepare_request and _parse_response methods with conversation history scenarios
-    - Test parameter conversion and response parsing with various scenarios including conversation history
-    - Test conversation history processing and updated history generation
+  - [ ] 5.4 Create unit tests for OpenAI request/response handling
+    - Write unit tests for _prepare_request and _parse_response methods
+    - Test parameter conversion and response parsing with various scenarios
     - Test error handling for malformed responses and API errors
     - Test comprehensive response structure validation scenarios
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
 
 - [ ] 6. Implement Anthropic provider
   - [ ] 6.1 Create Anthropic provider class
@@ -168,13 +142,12 @@
     - Add support for Claude models (Opus, Sonnet, Haiku)
     - _Requirements: 2.2, 7.1, 7.2, 7.3_
 
-  - [ ] 6.2 Implement Anthropic request/response handling with conversation history support
-    - Write _prepare_request method to convert ModelRequest to Anthropic format with conversation history using 2-space indentation
-    - Implement _parse_response method to convert Anthropic response to ModelResponse with updated conversation history
-    - Handle Anthropic-specific message formatting, system prompts, and conversation history
+  - [ ] 6.2 Implement Anthropic request/response handling
+    - Write _prepare_request method to convert ModelRequest to Anthropic format using 2-space indentation
+    - Implement _parse_response method to convert Anthropic response to ModelResponse
+    - Handle Anthropic-specific message formatting and system prompts
     - Implement comprehensive response structure validation for Anthropic responses
-    - Add conversation history processing to include previous messages in Anthropic message format
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
 
   - [ ] 6.3 Create unit tests for Anthropic provider
     - Write comprehensive unit tests for AnthropicProvider class with mock API responses
@@ -182,13 +155,12 @@
     - Test support for Claude models (Opus, Sonnet, Haiku)
     - _Requirements: 2.2, 7.1, 7.2, 7.3_
 
-  - [ ] 6.4 Create unit tests for Anthropic request/response handling with conversation history
-    - Write unit tests for _prepare_request and _parse_response methods with conversation history scenarios
-    - Test Anthropic-specific message formatting, system prompt handling, and conversation history processing
-    - Test conversation history processing and updated history generation
+  - [ ] 6.4 Create unit tests for Anthropic request/response handling
+    - Write unit tests for _prepare_request and _parse_response methods
+    - Test Anthropic-specific message formatting and system prompt handling
     - Test error handling for various response scenarios
     - Test comprehensive response structure validation scenarios
-    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3, 12.1, 12.2, 12.3_
+    - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
 
 - [ ] 7. Implement Gemini provider
   - [ ] 7.1 Create Gemini provider class
@@ -306,13 +278,12 @@
     - Add streaming parameter validation and removal at client level
     - _Requirements: 5.5, 9.2, 11.8, 11.9_
 
-  - [ ] 11.2 Implement single response generation with conversation history support
-    - Write generate_response method to route single requests through provider queues with conversation history using 2-space indentation
-    - Add comprehensive request validation including streaming parameter removal and conversation history validation
+  - [ ] 11.2 Implement single response generation
+    - Write generate_response method to route single requests through provider queues using 2-space indentation
+    - Add comprehensive request validation including streaming parameter removal
     - Implement response validation at client level as additional safety layer
-    - Add conversation history processing to return updated history with new exchange
-    - Add detailed error handling with provider context and conversation history errors
-    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7, 12.1, 12.2, 12.3, 12.11, 12.12_
+    - Add detailed error handling with provider context
+    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7_
 
   - [ ] 11.3 Implement concurrent response generation
     - Write generate_responses_concurrent method for processing multiple requests using 2-space indentation
@@ -334,12 +305,11 @@
     - Test error handling and client-level validation scenarios
     - _Requirements: 5.5, 9.2, 11.8, 11.9_
 
-  - [ ] 11.6 Create unit tests for single response generation with conversation history
-    - Write unit tests for generate_response method with various request scenarios including conversation history
-    - Test request validation, streaming parameter removal, conversation history validation, and error handling
-    - Test conversation history processing and updated history generation
+  - [ ] 11.6 Create unit tests for single response generation
+    - Write unit tests for generate_response method with various request scenarios
+    - Test request validation, streaming parameter removal, and error handling
     - Test response validation at client level and provider context handling
-    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7, 12.1, 12.2, 12.3, 12.11, 12.12_
+    - _Requirements: 6.1, 6.2, 10.1, 10.3, 11.1, 11.2, 11.7_
 
   - [ ] 11.7 Create unit tests for concurrent response generation
     - Write unit tests for generate_responses_concurrent method with multiple request scenarios
@@ -359,26 +329,26 @@
     - Add validation status reporting for each configuration file
     - Implement configuration directory creation with example files
     - Add streaming parameter detection and warnings in configuration validation
-    - _Requirements: 9.1, 9.3, 9.4, 9.5, 11.5_
+    - _Requirements: 10.1, 10.3, 10.4, 10.5, 11.5_
 
   - [ ] 12.2 Create configuration display functionality
     - Write methods to display available providers and models for each configuration using 2-space indentation
     - Add configuration validation status in listing output
     - Implement detailed configuration information display
     - Add warnings for any streaming-related configuration found
-    - _Requirements: 9.2, 9.3, 11.5_
+    - _Requirements: 10.2, 10.3, 11.5_
 
   - [ ] 12.3 Create unit tests for configuration file discovery
     - Write unit tests for configuration file discovery and listing methods
     - Test validation status reporting and directory creation scenarios
     - Test streaming parameter detection and warning functionality
-    - _Requirements: 9.1, 9.3, 9.4, 9.5, 11.5_
+    - _Requirements: 10.1, 10.3, 10.4, 10.5, 11.5_
 
   - [ ] 12.4 Create unit tests for configuration display functionality
     - Write unit tests for configuration display methods with various scenarios
     - Test provider and model listing, validation status display
     - Test streaming-related configuration warnings and detailed information display
-    - _Requirements: 9.2, 9.3, 11.5_
+    - _Requirements: 10.2, 10.3, 11.5_
 
 - [ ] 13. Implement comprehensive error handling and validation
   - [ ] 13.1 Add provider-specific error handling with streaming detection
@@ -485,7 +455,7 @@
     - Create example custom configuration files for different use cases
     - Add configuration templates with comprehensive comments including streaming limitations
     - Include examples of concurrent processing configuration options
-    - _Requirements: 9.5, 11.10_
+    - _Requirements: 10.5, 11.10_
 
   - [ ] 16.2 Update project documentation with concurrent processing guide
     - Update README.md with LLM connector usage instructions including concurrent processing
@@ -494,4 +464,4 @@
     - Document concurrent vs sequential processing behavior and performance implications
     - Add examples of using the concurrent processing features effectively
     - Document uv package manager usage and dependency management best practices
-    - _Requirements: 9.5, 10.5, 11.10_
+    - _Requirements: 10.5, 11.10_
