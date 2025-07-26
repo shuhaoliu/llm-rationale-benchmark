@@ -66,13 +66,13 @@
     - Test error handling for malformed YAML and missing files
     - _Requirements: 1.1, 1.4, 10.1, 10.4_
 
-  - [ ] 2.5 Create unit tests for single configuration file loading
+  - [x] 2.5 Create unit tests for single configuration file loading
     - Write unit tests for single file loading functionality
     - Test default configuration file selection and error handling scenarios
     - Test missing configuration file error handling
     - _Requirements: 1.2, 1.3, 5.4_
 
-  - [ ] 2.6 Create unit tests for configuration validator
+  - [x] 2.6 Create unit tests for configuration validator
     - Write comprehensive unit tests for ConfigValidator class
     - Test validation for required fields, data types, and value ranges
     - Test environment variable validation scenarios
