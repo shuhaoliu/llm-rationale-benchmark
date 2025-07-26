@@ -1,10 +1,9 @@
 """HTTP client infrastructure for LLM providers."""
 
-# HTTP client implementations will be imported here when created
-# from .client import HTTPClient
-# from .retry import RetryHandler
+from rationale_benchmark.llm.http.client import HTTPClient
+from rationale_benchmark.llm.http.retry import RetryHandler
 
 __all__ = [
-    # "HTTPClient",
-    # "RetryHandler",
+    "HTTPClient",
+    "RetryHandler",
 ]

@@ -123,3 +123,17 @@ class TimeoutError(LLMError):
     ):
         super().__init__(message)
         self.timeout_seconds = timeout_seconds
+
+
+class RetryExhaustedError(LLMError):
+    """Raised when maximum retry attempts are exceeded."""
+
+    def __init__(
+        self, 
+        message: str, 
+        max_retries: int, 
+        last_exception: Optional[Exception] = None
+    ):
+        super().__init__(message)
+        self.max_retries = max_retries
+        self.last_exception = last_exception
