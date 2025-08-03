@@ -4,13 +4,13 @@
 from .base import LLMProvider
 from .openai import OpenAIProvider
 from .anthropic import AnthropicProvider
-# from .gemini import GeminiProvider
+from .gemini import GeminiProvider
 # from .openrouter import OpenRouterProvider
 
 __all__ = [
     "LLMProvider",
     "OpenAIProvider",
     "AnthropicProvider",
-    # "GeminiProvider",
+    "GeminiProvider",
     # "OpenRouterProvider",
 ]
