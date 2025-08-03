@@ -2,15 +2,15 @@
 
 # Provider implementations will be imported here when created
 from .base import LLMProvider
-# from .openai import OpenAIProvider
-# from .anthropic import AnthropicProvider
+from .openai import OpenAIProvider
+from .anthropic import AnthropicProvider
 # from .gemini import GeminiProvider
 # from .openrouter import OpenRouterProvider
 
 __all__ = [
     "LLMProvider",
-    # "OpenAIProvider",
-    # "AnthropicProvider",
+    "OpenAIProvider",
+    "AnthropicProvider",
     # "GeminiProvider",
     # "OpenRouterProvider",
 ]

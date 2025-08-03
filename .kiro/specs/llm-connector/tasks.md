@@ -144,27 +144,27 @@
     - Test comprehensive response structure validation scenarios
     - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
 
-- [ ] 6. Implement Anthropic provider
-  - [ ] 6.1 Create Anthropic provider class
+- [x] 6. Implement Anthropic provider
+  - [x] 6.1 Create Anthropic provider class
     - Write AnthropicProvider class implementing the LLMProvider interface using 2-space indentation
     - Implement x-api-key header authentication for Anthropic API
     - Add support for Claude models (Opus, Sonnet, Haiku)
     - _Requirements: 2.2, 7.1, 7.2, 7.3_
 
-  - [ ] 6.2 Implement Anthropic request/response handling
+  - [x] 6.2 Implement Anthropic request/response handling
     - Write _prepare_request method to convert ModelRequest to Anthropic format using 2-space indentation
     - Implement _parse_response method to convert Anthropic response to ModelResponse
     - Handle Anthropic-specific message formatting and system prompts
     - Implement comprehensive response structure validation for Anthropic responses
     - _Requirements: 4.1, 4.2, 4.3, 9.1, 9.2, 9.3_
 
-  - [ ] 6.3 Create unit tests for Anthropic provider
+  - [x] 6.3 Create unit tests for Anthropic provider
     - Write comprehensive unit tests for AnthropicProvider class with mock API responses
     - Test x-api-key header authentication and API error handling
     - Test support for Claude models (Opus, Sonnet, Haiku)
     - _Requirements: 2.2, 7.1, 7.2, 7.3_
 
-  - [ ] 6.4 Create unit tests for Anthropic request/response handling
+  - [x] 6.4 Create unit tests for Anthropic request/response handling
     - Write unit tests for _prepare_request and _parse_response methods
     - Test Anthropic-specific message formatting and system prompt handling
     - Test error handling for various response scenarios
