@@ -9,6 +9,7 @@ from .exceptions import (
     ResponseValidationError,
     StreamingNotSupportedError,
 )
+from .factory import ProviderFactory
 from .models import (
     LLMConfig,
     ModelRequest,
@@ -30,4 +31,5 @@ __all__ = [
     "ModelRequest",
     "ModelResponse",
     "LLMProvider",
+    "ProviderFactory",
 ]
