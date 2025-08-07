@@ -347,3 +347,595 @@ class ConfigLoader:
       raise ConfigurationError(
         f"Failed to create configuration directory {self.config_dir}: {e}"
       )
+
+  def discover_configuration_files(self) -> list[dict[str, Any]]:
+    """Discover and list available configuration files with validation status.
+    
+    This method implements configuration file discovery as specified in task 12.1.
+    It provides:
+    - Discovery of all YAML configuration files in the config directory
+    - Validation status reporting for each configuration file
+    - Streaming parameter detection and warnings
+    - Provider and model information for each configuration
+    
+    Returns:
+      List of dictionaries containing configuration file information:
+      - name: Configuration name (without extension)
+      - file_path: Full path to configuration file
+      - is_valid: Boolean indicating if configuration is valid
+      - error_message: Error message if configuration is invalid
+      - has_streaming_params: Boolean indicating if streaming parameters found
+      - streaming_params: List of streaming parameter names found
+      - providers: Dictionary of provider information
+      - total_providers: Total number of providers configured
+      - total_models: Total number of models across all providers
+      - warnings: List of warning messages
+      
+    Raises:
+      ConfigurationError: If config directory doesn't exist
+    """
+    if not self.config_dir.exists():
+      raise ConfigurationError(
+        f"Configuration directory not found: {self.config_dir}"
+      )
+    
+    if not self.config_dir.is_dir():
+      raise ConfigurationError(
+        f"Configuration path is not a directory: {self.config_dir}"
+      )
+    
+    discovered_configs = []
+    config_files = self.discover_config_files()
+    
+    for config_name, config_path in config_files.items():
+      config_info = {
+        "name": config_name,
+        "file_path": str(config_path),
+        "is_valid": False,
+        "error_message": None,
+        "has_streaming_params": False,
+        "streaming_params": [],
+        "providers": {},
+        "total_providers": 0,
+        "total_models": 0,
+        "warnings": []
+      }
+      
+      try:
+        # Load and validate configuration
+        config = self.load_config(config_name)
+        
+        # Create validator to check for streaming parameters and other issues
+        from .validator import ConfigValidator
+        validator = ConfigValidator()
+        
+        # Run validation
+        validation_errors = validator.validate_config(config)
+        env_errors = validator.validate_environment_variables(config)
+        
+        # Check if configuration is valid
+        if not validation_errors and not env_errors:
+          config_info["is_valid"] = True
+        else:
+          config_info["error_message"] = "; ".join(validation_errors + env_errors)
+        
+        # Get streaming parameter information
+        streaming_params = validator.get_streaming_parameters_found()
+        if streaming_params:
+          config_info["has_streaming_params"] = True
+          config_info["streaming_params"] = streaming_params
+        
+        # Get warnings
+        config_info["warnings"] = validator.get_warnings()
+        
+        # Extract provider and model information
+        config_info["total_providers"] = len(config.providers)
+        config_info["providers"] = {}
+        total_models = 0
+        
+        for provider_name, provider_config in config.providers.items():
+          provider_info = {
+            "models": provider_config.models,
+            "model_count": len(provider_config.models),
+            "base_url": provider_config.base_url,
+            "timeout": provider_config.timeout,
+            "max_retries": provider_config.max_retries
+          }
+          config_info["providers"][provider_name] = provider_info
+          total_models += len(provider_config.models)
+        
+        config_info["total_models"] = total_models
+        
+      except Exception as e:
+        # Handle any errors during configuration loading or validation
+        config_info["is_valid"] = False
+        config_info["error_message"] = str(e)
+      
+      discovered_configs.append(config_info)
+    
+    # Sort by configuration name for consistent ordering
+    return sorted(discovered_configs, key=lambda x: x["name"])
+
+  def create_example_configuration_directory(self) -> None:
+    """Create configuration directory with example files if it doesn't exist.
+    
+    This method implements configuration directory creation as specified in task 12.1.
+    It provides:
+    - Creation of the configuration directory if it doesn't exist
+    - Generation of example configuration files for reference
+    - Proper error handling for directory creation failures
+    
+    Raises:
+      ConfigurationError: If directory cannot be created
+    """
+    # Create directory if it doesn't exist
+    self.create_config_directory()
+    
+    # Create example configuration files if they don't exist
+    default_config_path = self.config_dir / "default-llms.yaml"
+    example_config_path = self.config_dir / "example-config.yaml"
+    
+    # Default configuration template
+    default_config_template = {
+      "defaults": {
+        "timeout": 30,
+        "max_retries": 3,
+        "temperature": 0.7,
+        "max_tokens": 1000
+      },
+      "providers": {
+        "openai": {
+          "api_key": "${OPENAI_API_KEY}",
+          "base_url": "https://api.openai.com/v1",
+          "models": ["gpt-4", "gpt-3.5-turbo"],
+          "default_params": {
+            "temperature": 0.7
+          }
+        },
+        "anthropic": {
+          "api_key": "${ANTHROPIC_API_KEY}",
+          "base_url": "https://api.anthropic.com",
+          "models": ["claude-3-opus-20240229", "claude-3-sonnet-20240229"],
+          "default_params": {
+            "max_tokens": 2000
+          }
+        }
+      }
+    }
+    
+    # Example configuration with more providers
+    example_config_template = {
+      "defaults": {
+        "timeout": 45,
+        "max_retries": 5,
+        "temperature": 0.8,
+        "max_tokens": 2000
+      },
+      "providers": {
+        "openai": {
+          "api_key": "${OPENAI_API_KEY}",
+          "base_url": "https://api.openai.com/v1",
+          "models": ["gpt-4", "gpt-3.5-turbo", "gpt-4-turbo"],
+          "default_params": {
+            "temperature": 0.8,
+            "top_p": 0.9
+          }
+        },
+        "anthropic": {
+          "api_key": "${ANTHROPIC_API_KEY}",
+          "models": ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+        },
+        "gemini": {
+          "api_key": "${GEMINI_API_KEY}",
+          "models": ["gemini-pro", "gemini-pro-vision"],
+          "default_params": {
+            "temperature": 0.9
+          }
+        },
+        "openrouter": {
+          "api_key": "${OPENROUTER_API_KEY}",
+          "base_url": "https://openrouter.ai/api/v1",
+          "models": ["openai/gpt-4", "anthropic/claude-3-opus"],
+          "provider_specific": {
+            "http_referer": "https://your-app.com",
+            "x_title": "Your App Name"
+          }
+        }
+      }
+    }
+    
+    # Write default configuration if it doesn't exist
+    if not default_config_path.exists():
+      try:
+        with open(default_config_path, 'w', encoding='utf-8') as f:
+          yaml.dump(default_config_template, f, indent=2, default_flow_style=False)
+      except Exception as e:
+        raise ConfigurationError(
+          f"Failed to create default configuration file: {e}"
+        )
+    
+    # Write example configuration if it doesn't exist
+    if not example_config_path.exists():
+      try:
+        with open(example_config_path, 'w', encoding='utf-8') as f:
+          yaml.dump(example_config_template, f, indent=2, default_flow_style=False)
+      except Exception as e:
+        raise ConfigurationError(
+          f"Failed to create example configuration file: {e}"
+        )
+
+  def get_configuration_summary(self) -> dict[str, Any]:
+    """Get summary information about all available configurations.
+    
+    Returns:
+      Dictionary containing summary statistics:
+      - total_configurations: Total number of configuration files
+      - valid_configurations: Number of valid configurations
+      - invalid_configurations: Number of invalid configurations
+      - configurations_with_streaming: Number of configs with streaming parameters
+      - all_providers: List of all unique providers across configurations
+      - total_models: Total number of models across all configurations
+    """
+    try:
+      configs = self.discover_configuration_files()
+    except ConfigurationError:
+      # Return empty summary if directory doesn't exist
+      return {
+        "total_configurations": 0,
+        "valid_configurations": 0,
+        "invalid_configurations": 0,
+        "configurations_with_streaming": 0,
+        "all_providers": [],
+        "total_models": 0
+      }
+    
+    total_configs = len(configs)
+    valid_configs = sum(1 for c in configs if c["is_valid"])
+    invalid_configs = total_configs - valid_configs
+    streaming_configs = sum(1 for c in configs if c["has_streaming_params"])
+    
+    # Collect all unique providers
+    all_providers = set()
+    total_models = 0
+    
+    for config in configs:
+      all_providers.update(config["providers"].keys())
+      total_models += config["total_models"]
+    
+    return {
+      "total_configurations": total_configs,
+      "valid_configurations": valid_configs,
+      "invalid_configurations": invalid_configs,
+      "configurations_with_streaming": streaming_configs,
+      "all_providers": sorted(list(all_providers)),
+      "total_models": total_models
+    }
+
+  def validate_all_configurations(self) -> list[dict[str, Any]]:
+    """Validate all configuration files and return detailed results.
+    
+    Returns:
+      List of dictionaries containing detailed validation results for each configuration
+    """
+    try:
+      configs = self.discover_configuration_files()
+    except ConfigurationError:
+      return []
+    
+    detailed_results = []
+    
+    for config_info in configs:
+      # Create detailed validation report
+      detailed_result = {
+        "name": config_info["name"],
+        "file_path": config_info["file_path"],
+        "is_valid": config_info["is_valid"],
+        "error_message": config_info["error_message"],
+        "has_streaming_params": config_info["has_streaming_params"],
+        "streaming_params": config_info["streaming_params"],
+        "warnings": config_info["warnings"],
+        "validation_details": None
+      }
+      
+      # Try to get detailed validation report
+      try:
+        config = self.load_config(config_info["name"])
+        from .validator import ConfigValidator
+        validator = ConfigValidator()
+        detailed_result["validation_details"] = validator.create_validation_report(config)
+      except Exception:
+        # If we can't load config, create a basic validation report
+        detailed_result["validation_details"] = {
+          "validation_passed": False,
+          "total_errors": 1,
+          "configuration_errors": [config_info["error_message"]] if config_info["error_message"] else ["Configuration could not be loaded"],
+          "environment_errors": [],
+          "warnings": config_info["warnings"],
+          "streaming_parameters_found": config_info["streaming_params"],
+          "statistics": {
+            "total_providers": 0,
+            "total_models": 0,
+            "providers_configured": [],
+          }
+        }
+      
+      detailed_results.append(detailed_result)
+    
+    return detailed_results
+
+  def list_configurations_with_details(self) -> list[dict[str, Any]]:
+    """List all configurations with comprehensive details.
+    
+    Returns:
+      List of dictionaries containing comprehensive configuration information
+    """
+    return self.discover_configuration_files()
+
+  def display_configuration(self, config_name: str) -> dict[str, Any]:
+    """Display detailed information for a specific configuration.
+    
+    This method implements configuration display functionality as specified in task 12.2.
+    It provides:
+    - Detailed provider and model information display
+    - Configuration validation status in listing output
+    - Warnings for any streaming-related configuration found
+    - Comprehensive configuration information display
+    
+    Args:
+      config_name: Name of configuration to display (without .yaml extension)
+      
+    Returns:
+      Dictionary containing detailed configuration display information:
+      - name: Configuration name
+      - file_path: Full path to configuration file
+      - is_valid: Boolean indicating if configuration is valid
+      - error_message: Error message if configuration is invalid
+      - has_streaming_params: Boolean indicating if streaming parameters found
+      - streaming_params: List of streaming parameter names found
+      - warnings: List of warning messages
+      - defaults: Default configuration parameters
+      - providers: Detailed provider information
+      - total_providers: Total number of providers
+      - total_models: Total number of models
+      
+    Raises:
+      ConfigurationError: If configuration file not found
+    """
+    # Get the configuration file path
+    try:
+      config_path = self.get_config_file_path(config_name)
+    except ConfigurationError:
+      raise ConfigurationError(
+        f"Configuration file not found: {config_name}.yaml or {config_name}.yml"
+      )
+    
+    display_info = {
+      "name": config_name,
+      "file_path": str(config_path),
+      "is_valid": False,
+      "error_message": None,
+      "has_streaming_params": False,
+      "streaming_params": [],
+      "warnings": [],
+      "defaults": {},
+      "providers": {},
+      "total_providers": 0,
+      "total_models": 0
+    }
+    
+    try:
+      # Load configuration
+      config = self.load_config(config_name)
+      
+      # Create validator for streaming detection and validation
+      from .validator import ConfigValidator
+      validator = ConfigValidator()
+      
+      # Run validation
+      validation_errors = validator.validate_config(config)
+      env_errors = validator.validate_environment_variables(config)
+      
+      # Set validation status
+      if not validation_errors and not env_errors:
+        display_info["is_valid"] = True
+      else:
+        display_info["error_message"] = "; ".join(validation_errors + env_errors)
+      
+      # Get streaming parameter information
+      streaming_params = validator.get_streaming_parameters_found()
+      if streaming_params:
+        display_info["has_streaming_params"] = True
+        display_info["streaming_params"] = streaming_params
+      
+      # Get warnings
+      display_info["warnings"] = validator.get_warnings()
+      
+      # Extract defaults information
+      display_info["defaults"] = config.defaults.copy()
+      
+      # Extract detailed provider information
+      display_info["total_providers"] = len(config.providers)
+      total_models = 0
+      
+      for provider_name, provider_config in config.providers.items():
+        provider_info = {
+          "models": provider_config.models.copy(),
+          "model_count": len(provider_config.models),
+          "base_url": provider_config.base_url,
+          "timeout": provider_config.timeout,
+          "max_retries": provider_config.max_retries,
+          "default_params": provider_config.default_params.copy(),
+          "provider_specific": provider_config.provider_specific.copy(),
+          "has_custom_params": bool(provider_config.default_params or provider_config.provider_specific)
+        }
+        display_info["providers"][provider_name] = provider_info
+        total_models += len(provider_config.models)
+      
+      display_info["total_models"] = total_models
+      
+    except Exception as e:
+      # Handle any errors during configuration loading
+      display_info["is_valid"] = False
+      display_info["error_message"] = str(e)
+    
+    return display_info
+
+  def display_all_configurations(self) -> list[dict[str, Any]]:
+    """Display summary information for all available configurations.
+    
+    Returns:
+      List of dictionaries containing summary information for each configuration
+    """
+    try:
+      configs = self.discover_configuration_files()
+    except ConfigurationError:
+      return []
+    
+    # Return simplified summary information for all configurations
+    summary_configs = []
+    for config in configs:
+      summary_info = {
+        "name": config["name"],
+        "file_path": config["file_path"],
+        "is_valid": config["is_valid"],
+        "error_message": config["error_message"],
+        "has_streaming_params": config["has_streaming_params"],
+        "streaming_params": config["streaming_params"],
+        "warnings": config["warnings"],
+        "total_providers": config["total_providers"],
+        "total_models": config["total_models"],
+        "provider_names": list(config["providers"].keys())
+      }
+      summary_configs.append(summary_info)
+    
+    return summary_configs
+
+  def format_configuration_display(self, config_name: str) -> str:
+    """Format configuration information as human-readable text.
+    
+    Args:
+      config_name: Name of configuration to format
+      
+    Returns:
+      Formatted text string with configuration information
+      
+    Raises:
+      ConfigurationError: If configuration file not found
+    """
+    display_info = self.display_configuration(config_name)
+    
+    lines = []
+    lines.append(f"Configuration: {display_info['name']}")
+    lines.append(f"File Path: {display_info['file_path']}")
+    lines.append(f"Status: {'Valid' if display_info['is_valid'] else 'Invalid'}")
+    
+    if not display_info["is_valid"] and display_info["error_message"]:
+      lines.append(f"ERROR: {display_info['error_message']}")
+    
+    lines.append(f"Total Providers: {display_info['total_providers']}")
+    lines.append(f"Total Models: {display_info['total_models']}")
+    
+    # Show warnings if present
+    if display_info["warnings"]:
+      lines.append("")
+      lines.append("WARNINGS:")
+      for warning in display_info["warnings"]:
+        lines.append(f"  - {warning}")
+    
+    # Show streaming parameter warnings
+    if display_info["has_streaming_params"]:
+      lines.append("")
+      lines.append("STREAMING PARAMETERS DETECTED:")
+      lines.append("  The following streaming parameters were found and will be removed:")
+      for param in display_info["streaming_params"]:
+        lines.append(f"    - {param}")
+      lines.append("  Streaming is not supported by this LLM connector.")
+    
+    # Show defaults if configuration is valid
+    if display_info["is_valid"] and display_info["defaults"]:
+      lines.append("")
+      lines.append("Default Parameters:")
+      for key, value in display_info["defaults"].items():
+        lines.append(f"  {key}: {value}")
+    
+    # Show provider details if configuration is valid
+    if display_info["is_valid"] and display_info["providers"]:
+      lines.append("")
+      lines.append("Providers:")
+      
+      for provider_name, provider_info in display_info["providers"].items():
+        # Format provider name properly (handle special cases like OpenAI)
+        formatted_name = provider_name.title()
+        if provider_name.lower() == "openai":
+          formatted_name = "OpenAI"
+        elif provider_name.lower() == "openrouter":
+          formatted_name = "OpenRouter"
+        
+        lines.append(f"  {formatted_name} Provider:")
+        lines.append(f"    Models ({provider_info['model_count']}): {', '.join(provider_info['models'])}")
+        
+        if provider_info["base_url"]:
+          lines.append(f"    Base URL: {provider_info['base_url']}")
+        
+        lines.append(f"    Timeout: {provider_info['timeout']}s")
+        lines.append(f"    Max Retries: {provider_info['max_retries']}")
+        
+        if provider_info["default_params"]:
+          lines.append("    Default Parameters:")
+          for key, value in provider_info["default_params"].items():
+            lines.append(f"      {key}: {value}")
+        
+        if provider_info["provider_specific"]:
+          lines.append("    Provider-Specific Parameters:")
+          for key, value in provider_info["provider_specific"].items():
+            lines.append(f"      {key}: {value}")
+        
+        lines.append("")  # Empty line between providers
+    
+    return "\n".join(lines)
+
+  def format_all_configurations_display(self) -> str:
+    """Format summary information for all configurations as human-readable text.
+    
+    Returns:
+      Formatted text string with summary of all configurations
+    """
+    summary = self.get_configuration_summary()
+    all_configs = self.display_all_configurations()
+    
+    lines = []
+    lines.append("Configuration Summary")
+    lines.append("=" * 50)
+    lines.append(f"Total Configurations: {summary['total_configurations']}")
+    lines.append(f"Valid Configurations: {summary['valid_configurations']}")
+    lines.append(f"Invalid Configurations: {summary['invalid_configurations']}")
+    lines.append(f"Configurations with Streaming Parameters: {summary['configurations_with_streaming']}")
+    lines.append(f"Total Models Available: {summary['total_models']}")
+    
+    if summary["all_providers"]:
+      lines.append(f"All Providers: {', '.join(summary['all_providers'])}")
+    
+    if all_configs:
+      lines.append("")
+      lines.append("Individual Configurations:")
+      lines.append("-" * 30)
+      
+      for config in all_configs:
+        lines.append(f"  {config['name']}:")
+        lines.append(f"    Status: {'Valid' if config['is_valid'] else 'Invalid'}")
+        lines.append(f"    Providers: {config['total_providers']} ({', '.join(config['provider_names'])})")
+        lines.append(f"    Models: {config['total_models']}")
+        
+        if config["has_streaming_params"]:
+          lines.append(f"    Streaming Parameters: {', '.join(config['streaming_params'])}")
+        
+        if not config["is_valid"] and config["error_message"]:
+          lines.append(f"    Error: {config['error_message']}")
+        
+        lines.append("")  # Empty line between configurations
+    else:
+      lines.append("")
+      lines.append("No configuration files found.")
+      lines.append("Use create_example_configuration_directory() to create example files.")
+    
+    return "\n".join(lines)

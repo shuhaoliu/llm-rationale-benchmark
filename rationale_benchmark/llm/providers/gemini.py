@@ -9,9 +9,12 @@ from typing import Any, Dict, List, Optional
 from rationale_benchmark.llm.exceptions import (
   AuthenticationError,
   ModelNotFoundError,
+  NetworkError,
   ProviderError,
+  RateLimitError,
   ResponseValidationError,
   StreamingNotSupportedError,
+  TimeoutError,
 )
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
@@ -43,6 +46,177 @@ class GeminiProvider(LLMProvider):
     # Validate API key format on initialization
     if not self._is_valid_api_key_format(config.api_key):
       logger.warning(f"API key for {self.name} may have invalid format")
+
+  def _map_gemini_error(self, response, error_data: Optional[Dict[str, Any]] = None) -> Exception:
+    """Map Gemini API errors to specific exception types with provider-specific guidance.
+    
+    This method provides comprehensive error mapping for Google Gemini API responses,
+    including specific guidance for common issues and authentication problems.
+    
+    Args:
+      response: HTTP response object
+      error_data: Parsed error data from response (if available)
+      
+    Returns:
+      Appropriate exception instance with detailed error information
+    """
+    status_code = response.status
+    
+    # Extract error details if available
+    error_message = "Unknown error"
+    error_code = None
+    error_status = None
+    
+    if error_data and isinstance(error_data, dict):
+      if "error" in error_data:
+        error_info = error_data["error"]
+        if isinstance(error_info, dict):
+          error_message = error_info.get("message", error_message)
+          error_code = error_info.get("code", error_code)
+          error_status = error_info.get("status", error_status)
+        elif isinstance(error_info, str):
+          error_message = error_info
+      elif "message" in error_data:
+        error_message = error_data["message"]
+        error_code = error_data.get("code", error_code)
+    
+    # Map specific HTTP status codes to exceptions
+    if status_code == 401:
+      guidance = (
+        "Google Gemini authentication failed. Please check:\n"
+        "1. Ensure GOOGLE_API_KEY environment variable is set\n"
+        "2. Verify your API key starts with 'AIza' and is 39 characters long\n"
+        "3. Check if your API key is valid and active in Google Cloud Console\n"
+        "4. Ensure the Generative AI API is enabled for your project\n"
+        "5. Verify your account has sufficient quota"
+      )
+      return AuthenticationError("gemini", f"{error_message}. {guidance}")
+    
+    elif status_code == 403:
+      if "quota" in error_message.lower() or "billing" in error_message.lower():
+        guidance = (
+          "Google Gemini quota/billing issue. Please:\n"
+          "1. Check your Google Cloud billing account status\n"
+          "2. Verify you have sufficient API quota\n"
+          "3. Review your usage limits in Google Cloud Console\n"
+          "4. Enable billing if using beyond free tier limits\n"
+          "5. Consider requesting quota increases if needed"
+        )
+        return RateLimitError("gemini", f"{error_message}. {guidance}")
+      elif "api" in error_message.lower() and "enabled" in error_message.lower():
+        guidance = (
+          "Google Generative AI API not enabled. Please:\n"
+          "1. Go to Google Cloud Console\n"
+          "2. Navigate to APIs & Services > Library\n"
+          "3. Search for 'Generative Language API'\n"
+          "4. Click 'Enable' to activate the API\n"
+          "5. Wait a few minutes for activation to complete"
+        )
+        return ProviderError("gemini", f"{error_message}. {guidance}")
+      else:
+        guidance = (
+          "Google Gemini access forbidden. This may indicate:\n"
+          "1. Your API key lacks required permissions\n"
+          "2. The requested model is not available to your project\n"
+          "3. Your project may be restricted or suspended\n"
+          "4. Geographic restrictions may apply"
+        )
+        return ProviderError("gemini", f"{error_message}. {guidance}")
+    
+    elif status_code == 404:
+      if "model" in error_message.lower():
+        guidance = (
+          "Google Gemini model not found. Please:\n"
+          "1. Check the model name spelling (e.g., 'gemini-1.5-pro')\n"
+          "2. Verify the model is available in your region\n"
+          "3. Ensure your project has access to the requested model\n"
+          "4. Use list_models() to see available models\n"
+          "5. Check if the model requires special access approval"
+        )
+        # Try to extract model name from error message
+        model_name = "unknown"
+        if "model" in error_message.lower():
+          # Simple extraction - could be improved with regex
+          words = error_message.split()
+          for i, word in enumerate(words):
+            if "model" in word.lower() and i + 1 < len(words):
+              model_name = words[i + 1].strip("'\"")
+              break
+        return ModelNotFoundError("gemini", model_name)
+      else:
+        return ProviderError("gemini", f"Resource not found: {error_message}")
+    
+    elif status_code == 429:
+      # Rate limiting
+      retry_after = None
+      if hasattr(response, 'headers') and 'retry-after' in response.headers:
+        try:
+          retry_after = int(response.headers['retry-after'])
+        except (ValueError, TypeError):
+          pass
+      
+      guidance = (
+        "Google Gemini rate limit exceeded. Please:\n"
+        "1. Implement exponential backoff in your requests\n"
+        "2. Reduce your request frequency\n"
+        "3. Check your quota limits in Google Cloud Console\n"
+        "4. Consider requesting quota increases\n"
+        "5. Monitor your requests per minute/day limits"
+      )
+      return RateLimitError("gemini", f"{error_message}. {guidance}", retry_after)
+    
+    elif status_code == 500:
+      guidance = (
+        "Google Gemini server error. This is typically temporary:\n"
+        "1. Retry your request after a brief delay\n"
+        "2. Check Google Cloud status page for service issues\n"
+        "3. Implement exponential backoff for retries\n"
+        "4. Contact Google Cloud support if the issue persists"
+      )
+      return ProviderError("gemini", f"Server error: {error_message}. {guidance}")
+    
+    elif status_code == 502 or status_code == 503 or status_code == 504:
+      guidance = (
+        "Google Gemini service temporarily unavailable:\n"
+        "1. Retry your request after a delay\n"
+        "2. Implement exponential backoff\n"
+        "3. Check Google Cloud status page for outages\n"
+        "4. Consider using a different Gemini model if available"
+      )
+      return NetworkError(f"Gemini service unavailable (HTTP {status_code}): {error_message}. {guidance}")
+    
+    # Check for streaming-related errors
+    if "stream" in error_message.lower() or "streaming" in error_message.lower():
+      guidance = (
+        "Streaming is not supported by this connector:\n"
+        "1. Remove any streaming parameters from your configuration\n"
+        "2. Ensure no streaming options are set in provider_specific section\n"
+        "3. This connector only supports complete responses"
+      )
+      return StreamingNotSupportedError(f"Gemini streaming error: {error_message}. {guidance}")
+    
+    # Check for content safety errors
+    if "safety" in error_message.lower() or "blocked" in error_message.lower():
+      guidance = (
+        "Google Gemini content safety filter triggered:\n"
+        "1. Review your prompt for potentially harmful content\n"
+        "2. Modify your request to avoid triggering safety filters\n"
+        "3. Consider adjusting safety settings if appropriate\n"
+        "4. Check Gemini safety guidelines for more information"
+      )
+      return ProviderError("gemini", f"Content safety error: {error_message}. {guidance}")
+    
+    # Generic error with troubleshooting guidance
+    guidance = (
+      "General Google Gemini API error troubleshooting:\n"
+      "1. Check your request parameters and format\n"
+      "2. Verify your API key and project configuration\n"
+      "3. Review Google Gemini API documentation\n"
+      "4. Check Google Cloud status page for service issues\n"
+      "5. Ensure the Generative AI API is enabled"
+    )
+    
+    return ProviderError("gemini", f"API error (HTTP {status_code}): {error_message}. {guidance}")
 
   def _is_valid_api_key_format(self, api_key: str) -> bool:
     """Validate Google API key format.
@@ -121,36 +295,41 @@ class GeminiProvider(LLMProvider):
     return parsed_response
 
   async def _handle_api_error(self, response, model: str) -> None:
-    """Handle API error responses with appropriate exception types.
+    """Handle API error responses with comprehensive error mapping and guidance.
+    
+    This method uses the provider-specific error mapping to provide detailed
+    error information and troubleshooting guidance for Gemini API errors.
     
     Args:
       response: HTTP response object
       model: Model name for context
       
     Raises:
-      AuthenticationError: For authentication failures
-      ModelNotFoundError: For model not found errors
-      ProviderError: For other API errors
+      Various specific exceptions based on error type and status code
     """
     try:
       error_data = await response.json()
-      error_info = error_data.get("error", {})
-      error_message = error_info.get("message", f"API request failed with status {response.status}")
-      error_code = error_info.get("code", response.status)
-      
     except Exception:
-      error_message = f"API request failed with status {response.status}"
-      error_code = response.status
+      error_data = None
     
-    # Map specific error codes to appropriate exceptions
-    if response.status == 401 or error_code == 401:
-      raise AuthenticationError(self.name, error_message)
-    elif response.status == 404 or error_code == 404:
-      raise ModelNotFoundError(self.name, model)
-    elif response.status == 429 or error_code == 429:
-      raise ProviderError(self.name, f"Rate limit exceeded (429): {error_message}")
-    else:
-      raise ProviderError(self.name, f"API error ({response.status}): {error_message}")
+    # Use the comprehensive error mapping
+    exception = self._map_gemini_error(response, error_data)
+    
+    # Add model context to ModelNotFoundError if available
+    if isinstance(exception, ModelNotFoundError) and model:
+      exception.model = model
+    
+    logger.error(
+      f"Gemini API error (HTTP {response.status}): {exception}",
+      extra={
+        "provider": "gemini",
+        "status_code": response.status,
+        "model": model,
+        "error_type": type(exception).__name__
+      }
+    )
+    
+    raise exception
 
   async def list_models(self) -> List[str]:
     """List available models for Gemini provider.
@@ -241,8 +420,7 @@ class GeminiProvider(LLMProvider):
     Raises:
       StreamingNotSupportedError: If streaming parameters are detected
     """
-    # Validate no streaming parameters in provider_specific
-    self._validate_no_streaming_params(request.provider_specific, "provider_specific")
+    # Will validate streaming parameters after building payload
     
     # Build contents array (messages)
     contents = []
@@ -270,19 +448,27 @@ class GeminiProvider(LLMProvider):
     if request.stop_sequences:
       generation_config["stopSequences"] = request.stop_sequences
     
-    # Add valid provider-specific parameters
-    filtered_specific = self._filter_streaming_params(request.provider_specific)
-    for key, value in filtered_specific.items():
-      if self._is_valid_gemini_parameter(key, value):
-        generation_config[key] = value
-      else:
-        logger.warning(f"Skipped invalid Gemini parameter '{key}': {value}")
+    # Add valid provider-specific parameters (excluding streaming)
+    streaming_params = {
+      "stream", "streaming", "stream_options", "stream_usage", 
+      "stream_callback", "stream_handler", "incremental"
+    }
+    
+    for key, value in request.provider_specific.items():
+      if key not in streaming_params:
+        if self._is_valid_gemini_parameter(key, value):
+          generation_config[key] = value
+        else:
+          logger.warning(f"Skipped invalid Gemini parameter '{key}': {value}")
     
     # Build final payload
     payload = {
       "contents": contents,
       "generationConfig": generation_config
     }
+    
+    # Use base class streaming detection for comprehensive validation
+    self._detect_streaming_parameters(request, payload)
     
     logger.debug(f"Prepared Gemini request for {request.model} with {len(contents)} messages")
     return payload

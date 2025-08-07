@@ -1,5 +1,6 @@
 """Abstract base class for LLM providers."""
 
+import logging
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
@@ -11,6 +12,8 @@ from rationale_benchmark.llm.exceptions import (
 )
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(ABC):
@@ -225,6 +228,59 @@ class LLMProvider(ABC):
   def __str__(self) -> str:
     """String representation of the provider."""
     return f"{self.__class__.__name__}(name='{self.name}')"
+
+  def _detect_streaming_parameters(self, request: ModelRequest, payload: Dict[str, Any]) -> None:
+    """Detect and block streaming parameters in requests.
+    
+    This method checks for any streaming-related parameters in the request
+    or payload and raises an error if found, as streaming is not supported.
+    
+    Args:
+      request: The original model request
+      payload: The prepared request payload
+      
+    Raises:
+      StreamingNotSupportedError: If streaming parameters are detected
+    """
+    # Common streaming parameter names across providers
+    streaming_params = {
+      "stream", "streaming", "stream_options", "stream_usage",
+      "stream_callback", "stream_handler", "incremental",
+      "server_sent_events", "sse", "event_stream"
+    }
+    
+    blocked_params = []
+    
+    # Check payload for streaming parameters
+    for param in streaming_params:
+      if param in payload:
+        if payload[param] is True or (isinstance(payload[param], str) and payload[param].lower() == "true"):
+          blocked_params.append(param)
+    
+    # Check provider_specific section in request
+    if request.provider_specific:
+      for param in streaming_params:
+        if param in request.provider_specific:
+          if (request.provider_specific[param] is True or 
+              (isinstance(request.provider_specific[param], str) and 
+               request.provider_specific[param].lower() == "true")):
+            blocked_params.append(f"provider_specific.{param}")
+    
+    # Raise error if any streaming parameters were found
+    if blocked_params:
+      guidance = (
+        f"Streaming parameters detected but not supported by {self.name} provider:\n"
+        f"Blocked parameters: {blocked_params}\n"
+        "Please:\n"
+        "1. Remove all streaming-related parameters from your configuration\n"
+        "2. Ensure no streaming options are set in provider_specific section\n"
+        "3. This connector only supports complete, non-streaming responses\n"
+        "4. Check your configuration files for any streaming settings"
+      )
+      raise StreamingNotSupportedError(
+        f"Streaming not supported: {guidance}",
+        blocked_params=blocked_params
+      )
 
   def __repr__(self) -> str:
     """Detailed string representation of the provider."""

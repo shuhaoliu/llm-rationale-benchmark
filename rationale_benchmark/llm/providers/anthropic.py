@@ -1,5 +1,6 @@
 """Anthropic API provider implementation with structured output validation."""
 
+import logging
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -7,13 +8,18 @@ from typing import Any, Dict, List, Optional
 from rationale_benchmark.llm.exceptions import (
   AuthenticationError,
   ModelNotFoundError,
+  NetworkError,
   ProviderError,
+  RateLimitError,
   ResponseValidationError,
   StreamingNotSupportedError,
+  TimeoutError,
 )
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
 from rationale_benchmark.llm.providers.base import LLMProvider
+
+logger = logging.getLogger(__name__)
 
 
 class AnthropicProvider(LLMProvider):
@@ -32,6 +38,158 @@ class AnthropicProvider(LLMProvider):
     """
     super().__init__(config, http_client)
     self.base_url = config.base_url or "https://api.anthropic.com"
+
+  def _map_anthropic_error(self, response, error_data: Optional[Dict[str, Any]] = None) -> Exception:
+    """Map Anthropic API errors to specific exception types with provider-specific guidance.
+    
+    This method provides comprehensive error mapping for Anthropic API responses,
+    including specific guidance for common issues and authentication problems.
+    
+    Args:
+      response: HTTP response object
+      error_data: Parsed error data from response (if available)
+      
+    Returns:
+      Appropriate exception instance with detailed error information
+    """
+    status_code = response.status
+    
+    # Extract error details if available
+    error_message = "Unknown error"
+    error_type = "unknown"
+    
+    if error_data and isinstance(error_data, dict):
+      if "error" in error_data:
+        error_info = error_data["error"]
+        if isinstance(error_info, dict):
+          error_message = error_info.get("message", error_message)
+          error_type = error_info.get("type", error_type)
+        elif isinstance(error_info, str):
+          error_message = error_info
+      elif "message" in error_data:
+        error_message = error_data["message"]
+        error_type = error_data.get("type", error_type)
+    
+    # Map specific HTTP status codes to exceptions
+    if status_code == 401:
+      guidance = (
+        "Anthropic authentication failed. Please check:\n"
+        "1. Ensure ANTHROPIC_API_KEY environment variable is set\n"
+        "2. Verify your API key starts with 'sk-ant-api'\n"
+        "3. Check if your API key is valid and active\n"
+        "4. Ensure your account has sufficient credits"
+      )
+      return AuthenticationError("anthropic", f"{error_message}. {guidance}")
+    
+    elif status_code == 403:
+      if "billing" in error_message.lower() or "quota" in error_message.lower():
+        guidance = (
+          "Anthropic billing/quota issue. Please:\n"
+          "1. Check your Anthropic account billing status\n"
+          "2. Verify you have sufficient credits\n"
+          "3. Review your usage limits and quotas\n"
+          "4. Consider upgrading your plan if needed"
+        )
+        return AuthenticationError("anthropic", f"{error_message}. {guidance}")
+      else:
+        guidance = (
+          "Anthropic access forbidden. This may indicate:\n"
+          "1. Your API key lacks required permissions\n"
+          "2. The requested model is not available to your account\n"
+          "3. Your account may be restricted or suspended"
+        )
+        return ProviderError("anthropic", f"{error_message}. {guidance}")
+    
+    elif status_code == 404:
+      if "model" in error_message.lower():
+        guidance = (
+          "Anthropic model not found. Please:\n"
+          "1. Check the model name spelling (e.g., 'claude-3-opus-20240229')\n"
+          "2. Verify the model is available in your region\n"
+          "3. Ensure your account has access to the requested Claude model\n"
+          "4. Use list_models() to see available models"
+        )
+        # Try to extract model name from error message
+        model_name = "unknown"
+        if "model" in error_message.lower():
+          # Simple extraction - could be improved with regex
+          words = error_message.split()
+          for i, word in enumerate(words):
+            if "model" in word.lower() and i + 1 < len(words):
+              model_name = words[i + 1].strip("'\"")
+              break
+        return ModelNotFoundError("anthropic", model_name)
+      else:
+        return ProviderError("anthropic", f"Resource not found: {error_message}")
+    
+    elif status_code == 429:
+      # Rate limiting
+      retry_after = None
+      if hasattr(response, 'headers') and 'retry-after' in response.headers:
+        try:
+          retry_after = int(response.headers['retry-after'])
+        except (ValueError, TypeError):
+          pass
+      
+      if "rate limit" in error_message.lower():
+        guidance = (
+          "Anthropic rate limit exceeded. Please:\n"
+          "1. Implement exponential backoff in your requests\n"
+          "2. Reduce your request frequency\n"
+          "3. Consider upgrading to a higher tier plan\n"
+          "4. Monitor your requests per minute/hour limits"
+        )
+        return RateLimitError("anthropic", f"{error_message}. {guidance}", retry_after)
+      else:
+        guidance = (
+          "Anthropic quota exceeded. Please:\n"
+          "1. Check your account usage and limits\n"
+          "2. Wait for your quota to reset\n"
+          "3. Consider upgrading your plan\n"
+          "4. Monitor your usage to avoid future overages"
+        )
+        return RateLimitError("anthropic", f"{error_message}. {guidance}", retry_after)
+    
+    elif status_code == 500:
+      guidance = (
+        "Anthropic server error. This is typically temporary:\n"
+        "1. Retry your request after a brief delay\n"
+        "2. Check Anthropic status page for service issues\n"
+        "3. Implement exponential backoff for retries\n"
+        "4. Contact Anthropic support if the issue persists"
+      )
+      return ProviderError("anthropic", f"Server error: {error_message}. {guidance}")
+    
+    elif status_code == 502 or status_code == 503 or status_code == 504:
+      guidance = (
+        "Anthropic service temporarily unavailable:\n"
+        "1. Retry your request after a delay\n"
+        "2. Implement exponential backoff\n"
+        "3. Check Anthropic status page for outages\n"
+        "4. Consider using a different Claude model if available"
+      )
+      return NetworkError(f"Anthropic service unavailable (HTTP {status_code}): {error_message}. {guidance}")
+    
+    # Check for streaming-related errors
+    if "stream" in error_message.lower() or "streaming" in error_message.lower():
+      guidance = (
+        "Streaming is not supported by this connector:\n"
+        "1. Remove any streaming parameters from your configuration\n"
+        "2. Ensure no streaming options are set in provider_specific section\n"
+        "3. This connector only supports complete responses"
+      )
+      return StreamingNotSupportedError(f"Anthropic streaming error: {error_message}. {guidance}")
+    
+    # Generic error with troubleshooting guidance
+    guidance = (
+      "General Anthropic API error troubleshooting:\n"
+      "1. Check your request parameters and format\n"
+      "2. Verify your API key and account status\n"
+      "3. Review Anthropic API documentation for requirements\n"
+      "4. Check Anthropic status page for service issues"
+    )
+    
+    return ProviderError("anthropic", f"API error (HTTP {status_code}): {error_message}. {guidance}")
 
   def validate_config(self) -> List[str]:
     """Validate Anthropic-specific configuration.
@@ -128,35 +286,41 @@ class AnthropicProvider(LLMProvider):
     return self.config.models
 
   async def _handle_api_error(self, response, model: str) -> None:
-    """Handle API error responses from Anthropic.
+    """Handle API error responses with comprehensive error mapping and guidance.
+    
+    This method uses the provider-specific error mapping to provide detailed
+    error information and troubleshooting guidance for Anthropic API errors.
     
     Args:
       response: HTTP response object
       model: Model name for context
       
     Raises:
-      AuthenticationError: For authentication failures
-      ModelNotFoundError: If the requested model is not available
-      ProviderError: For other API errors
+      Various specific exceptions based on error type and status code
     """
     try:
       error_data = await response.json()
-      error_info = error_data.get("error", {})
-      error_type = error_info.get("type", "unknown_error")
-      error_message = error_info.get("message", f"API request failed with status {response.status}")
-      
-      if response.status == 401 or error_type == "authentication_error":
-        raise AuthenticationError("anthropic", error_message)
-      elif response.status == 400 and "model" in error_message.lower():
-        raise ModelNotFoundError("anthropic", model)
-      else:
-        raise ProviderError("anthropic", error_message)
-        
-    except (AuthenticationError, ModelNotFoundError, ProviderError):
-      raise
     except Exception:
-      # If we can't parse the error response, use the status code
-      raise ProviderError("anthropic", f"API request failed with status {response.status}")
+      error_data = None
+    
+    # Use the comprehensive error mapping
+    exception = self._map_anthropic_error(response, error_data)
+    
+    # Add model context to ModelNotFoundError if available
+    if isinstance(exception, ModelNotFoundError) and model:
+      exception.model = model
+    
+    logger.error(
+      f"Anthropic API error (HTTP {response.status}): {exception}",
+      extra={
+        "provider": "anthropic",
+        "status_code": response.status,
+        "model": model,
+        "error_type": type(exception).__name__
+      }
+    )
+    
+    raise exception
 
   def _prepare_request(self, request: ModelRequest) -> Dict[str, Any]:
     """Convert ModelRequest to Anthropic format, ensuring no streaming.
@@ -191,7 +355,7 @@ class AnthropicProvider(LLMProvider):
     if request.stop_sequences:
       payload["stop_sequences"] = request.stop_sequences
     
-    # Strictly filter out ALL streaming-related parameters
+    # Add provider-specific parameters (excluding streaming and protected params)
     streaming_params = {
       "stream", "streaming", "stream_options", "stream_usage", 
       "stream_callback", "stream_handler", "incremental"
@@ -200,24 +364,14 @@ class AnthropicProvider(LLMProvider):
     # Parameters that should not be overridden by provider_specific
     protected_params = {"model", "messages", "max_tokens", "temperature", "system", "stop_sequences"}
     
-    blocked_params = []
     for key, value in request.provider_specific.items():
-      if key in streaming_params:
-        blocked_params.append(key)
-      elif key in protected_params:
-        # Skip protected parameters - request values take precedence
-        continue
-      else:
+      if key not in streaming_params and key not in protected_params:
         # Validate parameter before adding
         if self._is_valid_anthropic_parameter(key, value):
           payload[key] = value
     
-    # Raise error if streaming was attempted
-    if blocked_params:
-      raise StreamingNotSupportedError(
-        f"Streaming parameters not supported: {blocked_params}",
-        blocked_params=blocked_params
-      )
+    # Use base class streaming detection for comprehensive validation
+    self._detect_streaming_parameters(request, payload)
     
     return payload
 

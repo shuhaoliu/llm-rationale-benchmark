@@ -332,35 +332,35 @@
     - Test structured results with provider grouping and validation status
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 12. Add configuration discovery and listing
-  - [ ] 12.1 Implement configuration file discovery
+- [x] 12. Add configuration discovery and listing
+  - [x] 12.1 Implement configuration file discovery
     - Write methods to discover and list available configuration files using 2-space indentation
     - Add validation status reporting for each configuration file
     - Implement configuration directory creation with example files
     - Add streaming parameter detection and warnings in configuration validation
     - _Requirements: 10.1, 10.3, 10.4, 10.5, 11.5_
 
-  - [ ] 12.2 Create configuration display functionality
+  - [x] 12.2 Create configuration display functionality
     - Write methods to display available providers and models for each configuration using 2-space indentation
     - Add configuration validation status in listing output
     - Implement detailed configuration information display
     - Add warnings for any streaming-related configuration found
     - _Requirements: 10.2, 10.3, 11.5_
 
-  - [ ] 12.3 Create unit tests for configuration file discovery
+  - [x] 12.3 Create unit tests for configuration file discovery
     - Write unit tests for configuration file discovery and listing methods
     - Test validation status reporting and directory creation scenarios
     - Test streaming parameter detection and warning functionality
     - _Requirements: 10.1, 10.3, 10.4, 10.5, 11.5_
 
-  - [ ] 12.4 Create unit tests for configuration display functionality
+  - [x] 12.4 Create unit tests for configuration display functionality
     - Write unit tests for configuration display methods with various scenarios
     - Test provider and model listing, validation status display
     - Test streaming-related configuration warnings and detailed information display
     - _Requirements: 10.2, 10.3, 11.5_
 
 - [ ] 13. Implement comprehensive error handling and validation
-  - [ ] 13.1 Add provider-specific error handling with streaming detection
+  - [x] 13.1 Add provider-specific error handling with streaming detection
     - Implement error mapping from provider APIs to custom exceptions using 2-space indentation
     - Add provider-specific error guidance and troubleshooting messages
     - Handle authentication errors with clear provider-specific instructions
