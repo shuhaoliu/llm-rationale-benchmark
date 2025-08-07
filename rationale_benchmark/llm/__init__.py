@@ -1,5 +1,6 @@
 """LLM connector module for unified interface to multiple LLM providers."""
 
+from .client import LLMClient
 from .exceptions import (
     ConfigurationError,
     ConversationHistoryError,
@@ -19,6 +20,7 @@ from .models import (
 from .providers import LLMProvider
 
 __all__ = [
+    "LLMClient",
     "LLMError",
     "LLMConnectorError",
     "ConfigurationError",
