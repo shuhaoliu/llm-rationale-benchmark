@@ -18,6 +18,7 @@ from rationale_benchmark.llm.exceptions import (
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
 from rationale_benchmark.llm.providers.base import LLMProvider
+from rationale_benchmark.llm.validation import ResponseValidator
 
 logger = logging.getLogger(__name__)
 
@@ -461,123 +462,37 @@ class AnthropicProvider(LLMProvider):
     return input_cost + output_cost
 
   def _validate_response_structure(self, response_data: Dict[str, Any]) -> None:
-    """Comprehensive validation of Anthropic response structure.
+    """Comprehensive validation of Anthropic response structure using enhanced validator.
     
-    This method performs exhaustive validation of the Anthropic API response
-    to ensure all required fields are present and properly formatted.
+    This method uses the ResponseValidator utility to perform exhaustive validation
+    of the Anthropic API response with detailed error reporting and recovery suggestions.
     
     Args:
       response_data: Raw response dictionary from Anthropic API
       
     Raises:
-      ResponseValidationError: If any validation check fails
+      ResponseValidationError: If any validation check fails with detailed context
     """
-    # Validate response is not empty
+    # Validate response is not empty first
     self._validate_response_not_empty(response_data)
     
-    # Check top-level required fields
-    required_fields = ["content", "model", "role", "stop_reason", "usage"]
-    for field in required_fields:
-      if field not in response_data:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in Anthropic response",
-          provider="anthropic",
-          response_data=response_data
-        )
+    # Use the enhanced ResponseValidator for comprehensive validation
+    validator = ResponseValidator("anthropic")
     
-    # Validate role
-    if response_data["role"] != "assistant":
-      raise ResponseValidationError(
-        f"Invalid role in Anthropic response: expected 'assistant', got '{response_data['role']}'",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    # Validate content array
-    content = response_data["content"]
-    if not isinstance(content, list) or not content:
-      raise ResponseValidationError(
-        "Anthropic response 'content' must be a non-empty array",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    # Validate first content block
-    content_block = content[0]
-    if not isinstance(content_block, dict):
-      raise ResponseValidationError(
-        "Anthropic content block must be a dictionary",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    required_content_fields = ["text", "type"]
-    for field in required_content_fields:
-      if field not in content_block:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in Anthropic content block",
-          provider="anthropic",
-          response_data=response_data
-        )
-    
-    # Validate content type
-    if content_block["type"] != "text":
-      raise ResponseValidationError(
-        f"Anthropic content block type must be 'text', got '{content_block['type']}'",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    # Validate content text is not empty
-    text_content = content_block["text"]
-    if not text_content or not isinstance(text_content, str):
-      raise ResponseValidationError(
-        "Anthropic content text must be a non-empty string",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    if len(text_content.strip()) == 0:
-      raise ResponseValidationError(
-        "Anthropic content text cannot be empty or whitespace only",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    # Validate usage information
-    usage = response_data["usage"]
-    if not isinstance(usage, dict):
-      raise ResponseValidationError(
-        "Anthropic usage must be a dictionary",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    required_usage_fields = ["input_tokens", "output_tokens"]
-    for field in required_usage_fields:
-      if field not in usage:
-        raise ResponseValidationError(
-          f"Missing usage field '{field}' in Anthropic response",
-          provider="anthropic",
-          response_data=response_data
-        )
-      if not isinstance(usage[field], int) or usage[field] < 0:
-        raise ResponseValidationError(
-          f"Anthropic usage field '{field}' must be a non-negative integer, got {usage[field]}",
-          provider="anthropic",
-          response_data=response_data
-        )
-    
-    # Validate model field
-    if not isinstance(response_data["model"], str) or not response_data["model"]:
-      raise ResponseValidationError(
-        "Anthropic response model must be a non-empty string",
-        provider="anthropic",
-        response_data=response_data
-      )
-    
-    # Validate stop_reason
-    valid_stop_reasons = ["end_turn", "max_tokens", "stop_sequence"]
-    if response_data["stop_reason"] not in valid_stop_reasons:
-      # Log warning but don't fail - Anthropic might add new stop reasons
-      pass
+    try:
+      validator.validate_anthropic_response(response_data)
+      
+      logger.debug(f"Anthropic response structure validation passed for model {response_data.get('model', 'unknown')}")
+      
+    except ResponseValidationError as e:
+      # Add Anthropic-specific context and recovery suggestions if not already present
+      if not e.recovery_suggestions:
+        e.add_recovery_suggestion("Check Anthropic API documentation for correct response format")
+        e.add_recovery_suggestion("Verify API key is valid and has proper permissions")
+        e.add_recovery_suggestion("Ensure message format follows Anthropic requirements")
+      
+      # Add additional context about the validation failure
+      if not e.validation_context.get("model"):
+        e.validation_context["model"] = response_data.get("model", "unknown")
+      
+      raise e

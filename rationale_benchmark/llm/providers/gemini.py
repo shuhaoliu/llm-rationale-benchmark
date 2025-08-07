@@ -19,6 +19,7 @@ from rationale_benchmark.llm.exceptions import (
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
 from rationale_benchmark.llm.providers.base import LLMProvider
+from rationale_benchmark.llm.validation import ResponseValidator
 
 logger = logging.getLogger(__name__)
 
@@ -557,126 +558,36 @@ class GeminiProvider(LLMProvider):
     )
 
   def _validate_response_structure(self, response_data: Dict[str, Any]) -> None:
-    """Comprehensive validation of Gemini response structure.
+    """Comprehensive validation of Gemini response structure using enhanced validator.
     
-    This method performs exhaustive validation of the Gemini API response
-    to ensure all required fields are present and properly formatted.
+    This method uses the ResponseValidator utility to perform exhaustive validation
+    of the Gemini API response with detailed error reporting and recovery suggestions.
     
     Args:
       response_data: Raw response dictionary from Gemini API
       
     Raises:
-      ResponseValidationError: If any validation check fails
+      ResponseValidationError: If any validation check fails with detailed context
     """
-    # Check top-level required fields
-    if "candidates" not in response_data:
-      raise ResponseValidationError(
-        "Missing required field 'candidates' in Gemini response",
-        provider=self.name,
-        response_data=response_data
-      )
+    # Use the enhanced ResponseValidator for comprehensive validation
+    validator = ResponseValidator("gemini")
     
-    # Validate candidates array
-    candidates = response_data["candidates"]
-    if not isinstance(candidates, list) or not candidates:
-      raise ResponseValidationError(
-        "Gemini response 'candidates' must be a non-empty array",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    # Validate first candidate structure
-    candidate = candidates[0]
-    if not isinstance(candidate, dict):
-      raise ResponseValidationError(
-        "Gemini candidate must be a dictionary",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    # Check required candidate fields
-    required_candidate_fields = ["content", "finishReason", "index"]
-    for field in required_candidate_fields:
-      if field not in candidate:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in Gemini candidate",
-          provider=self.name,
-          response_data=response_data
-        )
-    
-    # Validate candidate index
-    if not isinstance(candidate["index"], int) or candidate["index"] < 0:
-      raise ResponseValidationError(
-        f"Invalid candidate index in Gemini response: {candidate['index']}",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    # Validate content structure
-    content = candidate["content"]
-    if not isinstance(content, dict):
-      raise ResponseValidationError(
-        "Gemini candidate content must be a dictionary",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    # Check required content fields
-    required_content_fields = ["parts", "role"]
-    for field in required_content_fields:
-      if field not in content:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in Gemini content",
-          provider=self.name,
-          response_data=response_data
-        )
-    
-    # Validate content role
-    if content["role"] != "model":
-      raise ResponseValidationError(
-        f"Invalid content role in Gemini response: expected 'model', got '{content['role']}'",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    # Validate parts array
-    parts = content["parts"]
-    if not isinstance(parts, list) or not parts:
-      raise ResponseValidationError(
-        "Gemini content parts must be a non-empty array",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    # Validate at least one part has text
-    has_text = False
-    for part in parts:
-      if not isinstance(part, dict):
-        raise ResponseValidationError(
-          "Gemini content part must be a dictionary",
-          provider=self.name,
-          response_data=response_data
-        )
+    try:
+      validator.validate_gemini_response(response_data)
       
-      if "text" in part:
-        if not isinstance(part["text"], str):
-          raise ResponseValidationError(
-            "Gemini part text must be a string",
-            provider=self.name,
-            response_data=response_data
-          )
-        
-        if part["text"].strip():  # Has non-whitespace content
-          has_text = True
-    
-    if not has_text:
-      raise ResponseValidationError(
-        "Gemini response must contain at least one part with non-empty text",
-        provider=self.name,
-        response_data=response_data
-      )
-    
-    logger.debug(f"Gemini response structure validation passed for model response")
+      logger.debug(f"Gemini response structure validation passed for model response")
+      
+    except ResponseValidationError as e:
+      # Add Gemini-specific context and recovery suggestions if not already present
+      if not e.recovery_suggestions:
+        e.add_recovery_suggestion("Check Google AI API documentation for correct response format")
+        e.add_recovery_suggestion("Verify API key and project configuration")
+        e.add_recovery_suggestion("Ensure request follows Gemini API requirements")
+      
+      # Add additional context about the validation failure
+      e.validation_context["provider_name"] = self.name
+      
+      raise e
 
   def _estimate_cost(self, usage_metadata: Dict[str, Any], model: str) -> Optional[float]:
     """Estimate cost for Gemini API usage.

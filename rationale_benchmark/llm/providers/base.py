@@ -12,6 +12,7 @@ from rationale_benchmark.llm.exceptions import (
 )
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
+from rationale_benchmark.llm.logging import get_llm_logger
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ class LLMProvider(ABC):
     return f"{self.__class__.__name__}(name='{self.name}')"
 
   def _detect_streaming_parameters(self, request: ModelRequest, payload: Dict[str, Any]) -> None:
-    """Detect and block streaming parameters in requests.
+    """Detect and block streaming parameters in requests with enhanced logging.
     
     This method checks for any streaming-related parameters in the request
     or payload and raises an error if found, as streaming is not supported.
@@ -266,8 +267,16 @@ class LLMProvider(ABC):
                request.provider_specific[param].lower() == "true")):
             blocked_params.append(f"provider_specific.{param}")
     
-    # Raise error if any streaming parameters were found
+    # Log streaming parameter detection if any found
     if blocked_params:
+      logger = get_llm_logger(__name__, self.name)
+      logger.log_streaming_detection(
+        blocked_params=blocked_params,
+        provider=self.name,
+        model=request.model,
+        request_id=id(request),
+      )
+      
       guidance = (
         f"Streaming parameters detected but not supported by {self.name} provider:\n"
         f"Blocked parameters: {blocked_params}\n"

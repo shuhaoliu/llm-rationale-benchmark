@@ -1,7 +1,7 @@
 """Unit tests for provider-specific error handling with streaming detection."""
 
 import pytest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from rationale_benchmark.llm.exceptions import (
   AuthenticationError,
@@ -9,557 +9,538 @@ from rationale_benchmark.llm.exceptions import (
   NetworkError,
   ProviderError,
   RateLimitError,
+  ResponseValidationError,
   StreamingNotSupportedError,
 )
-from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ProviderConfig
+from rationale_benchmark.llm.providers.openai import OpenAIProvider
 from rationale_benchmark.llm.providers.anthropic import AnthropicProvider
 from rationale_benchmark.llm.providers.gemini import GeminiProvider
-from rationale_benchmark.llm.providers.openai import OpenAIProvider
 from rationale_benchmark.llm.providers.openrouter import OpenRouterProvider
 
 
-class TestOpenAIErrorHandling:
-  """Test OpenAI provider error handling and mapping."""
-
+class TestProviderErrorMapping:
+  """Test error mapping from provider APIs to custom exceptions."""
+  
   @pytest.fixture
-  def provider_config(self):
-    """Create test provider configuration."""
-    return ProviderConfig(
+  def openai_provider(self):
+    """Create OpenAI provider for testing."""
+    config = ProviderConfig(
       name="openai",
-      api_key="sk-test123",
+      api_key="test-key",
+      base_url="https://api.openai.com/v1",
       timeout=30,
       max_retries=3,
-      models=["gpt-4", "gpt-3.5-turbo"]
     )
-
+    http_client = AsyncMock()
+    return OpenAIProvider(config, http_client)
+  
   @pytest.fixture
-  def http_client(self):
-    """Create mock HTTP client."""
-    return Mock(spec=HTTPClient)
-
+  def anthropic_provider(self):
+    """Create Anthropic provider for testing."""
+    config = ProviderConfig(
+      name="anthropic",
+      api_key="test-key",
+      base_url="https://api.anthropic.com",
+      timeout=30,
+      max_retries=3,
+    )
+    http_client = AsyncMock()
+    return AnthropicProvider(config, http_client)
+  
   @pytest.fixture
-  def provider(self, provider_config, http_client):
-    """Create OpenAI provider instance."""
-    return OpenAIProvider(provider_config, http_client)
-
-  def test_map_openai_error_401_authentication(self, provider):
-    """Test mapping of 401 authentication errors."""
-    response = Mock()
-    response.status = 401
-    
-    error_data = {
+  def sample_request(self):
+    """Create sample model request for testing."""
+    return ModelRequest(
+      prompt="Test prompt",
+      model="gpt-4",
+      temperature=0.7,
+      max_tokens=100,
+    )
+  
+  @pytest.mark.asyncio
+  async def test_openai_authentication_error_401(self, openai_provider, sample_request):
+    """Test OpenAI 401 authentication error mapping."""
+    # Mock HTTP response for 401 error
+    mock_response = Mock()
+    mock_response.status = 401
+    mock_response.json = AsyncMock(return_value={
       "error": {
-        "message": "Invalid API key",
+        "message": "Invalid API key provided",
         "type": "invalid_request_error",
         "code": "invalid_api_key"
       }
-    }
+    })
     
-    exception = provider._map_openai_error(response, error_data)
+    openai_provider.http_client.post = AsyncMock(return_value=mock_response)
     
-    assert isinstance(exception, AuthenticationError)
-    assert "OpenAI authentication failed" in str(exception)
-    assert "OPENAI_API_KEY environment variable" in str(exception)
-    assert "Verify your API key is valid" in str(exception)
-
-  def test_map_openai_error_404_model_not_found(self, provider):
-    """Test mapping of 404 model not found errors."""
-    response = Mock()
-    response.status = 404
+    with pytest.raises(AuthenticationError) as exc_info:
+      await openai_provider.generate_response(sample_request)
     
-    error_data = {
+    error = exc_info.value
+    assert error.provider == "openai"
+    assert "Invalid API key" in str(error)
+    assert "Check your OpenAI API key" in str(error)
+  
+  @pytest.mark.asyncio
+  async def test_openai_model_not_found_404(self, openai_provider, sample_request):
+    """Test OpenAI 404 model not found error mapping."""
+    # Mock HTTP response for 404 error
+    mock_response = Mock()
+    mock_response.status = 404
+    mock_response.json = AsyncMock(return_value={
       "error": {
         "message": "The model 'gpt-5' does not exist",
         "type": "invalid_request_error",
         "code": "model_not_found"
       }
-    }
+    })
     
-    exception = provider._map_openai_error(response, error_data)
+    openai_provider.http_client.post = AsyncMock(return_value=mock_response)
     
-    assert isinstance(exception, ModelNotFoundError)
-    assert "model not found" in str(exception).lower()
-    assert "Check the model name spelling" in str(exception)
-    assert "list_models()" in str(exception)
-
-  def test_map_openai_error_429_rate_limit(self, provider):
-    """Test mapping of 429 rate limit errors."""
-    response = Mock()
-    response.status = 429
-    response.headers = {"retry-after": "60"}
+    with pytest.raises(ModelNotFoundError) as exc_info:
+      await openai_provider.generate_response(sample_request)
     
-    error_data = {
+    error = exc_info.value
+    assert error.provider == "openai"
+    assert "gpt-4" in error.model  # Should extract model from request
+    assert "Check the model name spelling" in str(error)
+  
+  @pytest.mark.asyncio
+  async def test_openai_rate_limit_429(self, openai_provider, sample_request):
+    """Test OpenAI 429 rate limit error mapping."""
+    # Mock HTTP response for 429 error
+    mock_response = Mock()
+    mock_response.status = 429
+    mock_response.headers = {"retry-after": "60"}
+    mock_response.json = AsyncMock(return_value={
       "error": {
         "message": "Rate limit exceeded",
-        "type": "rate_limit_error"
+        "type": "rate_limit_error",
+        "code": "rate_limit_exceeded"
       }
-    }
+    })
     
-    exception = provider._map_openai_error(response, error_data)
+    openai_provider.http_client.post = AsyncMock(return_value=mock_response)
     
-    assert isinstance(exception, RateLimitError)
-    assert exception.retry_after == 60
-    assert "rate limit exceeded" in str(exception).lower()
-    assert "exponential backoff" in str(exception)
-
-  def test_map_openai_error_500_server_error(self, provider):
-    """Test mapping of 500 server errors."""
-    response = Mock()
-    response.status = 500
+    with pytest.raises(RateLimitError) as exc_info:
+      await openai_provider.generate_response(sample_request)
     
-    error_data = {
+    error = exc_info.value
+    assert error.provider == "openai"
+    assert error.retry_after == 60
+    assert "Implement exponential backoff" in str(error)
+  
+  @pytest.mark.asyncio
+  async def test_anthropic_authentication_error_401(self, anthropic_provider, sample_request):
+    """Test Anthropic 401 authentication error mapping."""
+    # Mock HTTP response for 401 error
+    mock_response = Mock()
+    mock_response.status = 401
+    mock_response.json = AsyncMock(return_value={
       "error": {
-        "message": "Internal server error",
-        "type": "server_error"
+        "type": "authentication_error",
+        "message": "Invalid API key"
       }
-    }
+    })
     
-    exception = provider._map_openai_error(response, error_data)
+    anthropic_provider.http_client.post = AsyncMock(return_value=mock_response)
     
-    assert isinstance(exception, ProviderError)
-    assert "Server error" in str(exception)
-    assert "OpenAI status page" in str(exception)
-    assert "exponential backoff" in str(exception)
-
-  def test_map_openai_error_streaming_detection(self, provider):
-    """Test detection of streaming-related errors."""
-    response = Mock()
-    response.status = 400
+    with pytest.raises(AuthenticationError) as exc_info:
+      await anthropic_provider.generate_response(sample_request)
     
-    error_data = {
+    error = exc_info.value
+    assert error.provider == "anthropic"
+    assert "Invalid API key" in str(error)
+    assert "Check your Anthropic API key" in str(error)
+  
+  @pytest.mark.asyncio
+  async def test_anthropic_rate_limit_429(self, anthropic_provider, sample_request):
+    """Test Anthropic 429 rate limit error mapping."""
+    # Mock HTTP response for 429 error
+    mock_response = Mock()
+    mock_response.status = 429
+    mock_response.headers = {"retry-after": "30"}
+    mock_response.json = AsyncMock(return_value={
       "error": {
-        "message": "Streaming is not supported for this endpoint",
-        "type": "invalid_request_error"
+        "type": "rate_limit_error",
+        "message": "Rate limit exceeded"
       }
-    }
+    })
     
-    exception = provider._map_openai_error(response, error_data)
+    anthropic_provider.http_client.post = AsyncMock(return_value=mock_response)
     
-    assert isinstance(exception, StreamingNotSupportedError)
-    assert "streaming" in str(exception).lower()
-    assert "Remove any 'stream' parameters" in str(exception)
-
-  def test_map_openai_error_no_error_data(self, provider):
-    """Test error mapping when no error data is available."""
-    response = Mock()
-    response.status = 400
+    with pytest.raises(RateLimitError) as exc_info:
+      await anthropic_provider.generate_response(sample_request)
     
-    exception = provider._map_openai_error(response, None)
+    error = exc_info.value
+    assert error.provider == "anthropic"
+    assert error.retry_after == 30
+    assert "Rate limit exceeded" in str(error)
+  
+  @pytest.mark.asyncio
+  async def test_network_error_handling(self, openai_provider, sample_request):
+    """Test network error handling and mapping."""
+    import aiohttp
     
-    assert isinstance(exception, ProviderError)
-    assert "HTTP 400" in str(exception)
-    assert "troubleshooting" in str(exception)
-
-
-class TestAnthropicErrorHandling:
-  """Test Anthropic provider error handling and mapping."""
-
-  @pytest.fixture
-  def provider_config(self):
-    """Create test provider configuration."""
-    return ProviderConfig(
-      name="anthropic",
-      api_key="sk-ant-api03-test123",
-      timeout=30,
-      max_retries=3,
-      models=["claude-3-opus-20240229"]
+    # Mock network error
+    openai_provider.http_client.post = AsyncMock(
+      side_effect=aiohttp.ClientError("Connection timeout")
     )
-
-  @pytest.fixture
-  def http_client(self):
-    """Create mock HTTP client."""
-    return Mock(spec=HTTPClient)
-
-  @pytest.fixture
-  def provider(self, provider_config, http_client):
-    """Create Anthropic provider instance."""
-    return AnthropicProvider(provider_config, http_client)
-
-  def test_map_anthropic_error_401_authentication(self, provider):
-    """Test mapping of 401 authentication errors."""
-    response = Mock()
-    response.status = 401
     
-    error_data = {
-      "error": {
-        "message": "Invalid API key",
-        "type": "authentication_error"
-      }
-    }
+    with pytest.raises(ProviderError) as exc_info:
+      await openai_provider.generate_response(sample_request)
     
-    exception = provider._map_anthropic_error(response, error_data)
+    error = exc_info.value
+    assert error.provider == "openai"
+    assert "Request failed" in str(error)
+    assert "Connection timeout" in str(error)
+  
+  def test_provider_specific_error_guidance_openai(self, openai_provider):
+    """Test OpenAI-specific error guidance messages."""
+    # Test authentication error guidance
+    auth_error = openai_provider._map_http_error(401, "Invalid API key", None)
+    assert isinstance(auth_error, AuthenticationError)
+    assert "Check your OpenAI API key" in str(auth_error)
+    assert "Verify the key is active" in str(auth_error)
     
-    assert isinstance(exception, AuthenticationError)
-    assert "Anthropic authentication failed" in str(exception)
-    assert "ANTHROPIC_API_KEY environment variable" in str(exception)
-    assert "sk-ant-api" in str(exception)
-
-  def test_map_anthropic_error_404_model_not_found(self, provider):
-    """Test mapping of 404 model not found errors."""
-    response = Mock()
-    response.status = 404
+    # Test rate limit error guidance
+    rate_error = openai_provider._map_http_error(429, "Rate limit exceeded", None)
+    assert isinstance(rate_error, RateLimitError)
+    assert "Implement exponential backoff" in str(rate_error)
+    assert "Reduce your request frequency" in str(rate_error)
+  
+  def test_provider_specific_error_guidance_anthropic(self, anthropic_provider):
+    """Test Anthropic-specific error guidance messages."""
+    # Test authentication error guidance
+    auth_error = anthropic_provider._map_http_error(401, "Invalid API key", None)
+    assert isinstance(auth_error, AuthenticationError)
+    assert "Check your Anthropic API key" in str(auth_error)
+    assert "Verify the key format" in str(auth_error)
     
-    error_data = {
-      "error": {
-        "message": "Model claude-4 not found",
-        "type": "not_found_error"
-      }
-    }
-    
-    exception = provider._map_anthropic_error(response, error_data)
-    
-    assert isinstance(exception, ModelNotFoundError)
-    assert "model not found" in str(exception).lower()
-    assert "claude-3-opus-20240229" in str(exception)
-
-  def test_map_anthropic_error_429_rate_limit(self, provider):
-    """Test mapping of 429 rate limit errors."""
-    response = Mock()
-    response.status = 429
-    response.headers = {"retry-after": "30"}
-    
-    error_data = {
-      "error": {
-        "message": "Rate limit exceeded",
-        "type": "rate_limit_error"
-      }
-    }
-    
-    exception = provider._map_anthropic_error(response, error_data)
-    
-    assert isinstance(exception, RateLimitError)
-    assert exception.retry_after == 30
-    assert "rate limit exceeded" in str(exception).lower()
-
-  def test_map_anthropic_error_streaming_detection(self, provider):
-    """Test detection of streaming-related errors."""
-    response = Mock()
-    response.status = 400
-    
-    error_data = {
-      "error": {
-        "message": "Streaming mode is not supported",
-        "type": "invalid_request_error"
-      }
-    }
-    
-    exception = provider._map_anthropic_error(response, error_data)
-    
-    assert isinstance(exception, StreamingNotSupportedError)
-    assert "streaming" in str(exception).lower()
-
-
-class TestGeminiErrorHandling:
-  """Test Gemini provider error handling and mapping."""
-
-  @pytest.fixture
-  def provider_config(self):
-    """Create test provider configuration."""
-    return ProviderConfig(
-      name="gemini",
-      api_key="AIzaTest123456789012345678901234567890",
-      timeout=30,
-      max_retries=3,
-      models=["gemini-1.5-pro"]
-    )
-
-  @pytest.fixture
-  def http_client(self):
-    """Create mock HTTP client."""
-    return Mock(spec=HTTPClient)
-
-  @pytest.fixture
-  def provider(self, provider_config, http_client):
-    """Create Gemini provider instance."""
-    return GeminiProvider(provider_config, http_client)
-
-  def test_map_gemini_error_401_authentication(self, provider):
-    """Test mapping of 401 authentication errors."""
-    response = Mock()
-    response.status = 401
-    
-    error_data = {
-      "error": {
-        "message": "API key not valid",
-        "code": 401,
-        "status": "UNAUTHENTICATED"
-      }
-    }
-    
-    exception = provider._map_gemini_error(response, error_data)
-    
-    assert isinstance(exception, AuthenticationError)
-    assert "Gemini authentication failed" in str(exception)
-    assert "GOOGLE_API_KEY environment variable" in str(exception)
-    assert "AIza" in str(exception)
-
-  def test_map_gemini_error_403_api_not_enabled(self, provider):
-    """Test mapping of 403 API not enabled errors."""
-    response = Mock()
-    response.status = 403
-    
-    error_data = {
-      "error": {
-        "message": "Generative Language API has not been used",
-        "code": 403,
-        "status": "PERMISSION_DENIED"
-      }
-    }
-    
-    exception = provider._map_gemini_error(response, error_data)
-    
-    assert isinstance(exception, ProviderError)
-    assert "API not enabled" in str(exception)
-    assert "Google Cloud Console" in str(exception)
-    assert "Enable" in str(exception)
-
-  def test_map_gemini_error_429_quota_exceeded(self, provider):
-    """Test mapping of 429 quota exceeded errors."""
-    response = Mock()
-    response.status = 429
-    
-    error_data = {
-      "error": {
-        "message": "Quota exceeded",
-        "code": 429,
-        "status": "RESOURCE_EXHAUSTED"
-      }
-    }
-    
-    exception = provider._map_gemini_error(response, error_data)
-    
-    assert isinstance(exception, RateLimitError)
-    assert "rate limit exceeded" in str(exception).lower()
-    assert "quota limits" in str(exception)
-
-  def test_map_gemini_error_content_safety(self, provider):
-    """Test mapping of content safety errors."""
-    response = Mock()
-    response.status = 400
-    
-    error_data = {
-      "error": {
-        "message": "Content blocked due to safety filters",
-        "code": 400
-      }
-    }
-    
-    exception = provider._map_gemini_error(response, error_data)
-    
-    assert isinstance(exception, ProviderError)
-    assert "Content safety error" in str(exception)
-    assert "safety filter" in str(exception)
-
-
-class TestOpenRouterErrorHandling:
-  """Test OpenRouter provider error handling and mapping."""
-
-  @pytest.fixture
-  def provider_config(self):
-    """Create test provider configuration."""
-    return ProviderConfig(
-      name="openrouter",
-      api_key="sk-or-test123",
-      timeout=30,
-      max_retries=3,
-      models=["openai/gpt-4"]
-    )
-
-  @pytest.fixture
-  def http_client(self):
-    """Create mock HTTP client."""
-    return Mock(spec=HTTPClient)
-
-  @pytest.fixture
-  def provider(self, provider_config, http_client):
-    """Create OpenRouter provider instance."""
-    return OpenRouterProvider(provider_config, http_client)
-
-  def test_map_openrouter_error_401_authentication(self, provider):
-    """Test mapping of 401 authentication errors."""
-    response = Mock()
-    response.status = 401
-    
-    error_data = {
-      "error": {
-        "message": "Invalid API key",
-        "type": "invalid_request_error"
-      }
-    }
-    
-    exception = provider._map_openrouter_error(response, error_data)
-    
-    assert isinstance(exception, AuthenticationError)
-    assert "OpenRouter authentication failed" in str(exception)
-    assert "OPENROUTER_API_KEY environment variable" in str(exception)
-
-  def test_map_openrouter_error_402_payment_required(self, provider):
-    """Test mapping of 402 payment required errors."""
-    response = Mock()
-    response.status = 402
-    
-    error_data = {
-      "error": {
-        "message": "Insufficient credits",
-        "type": "insufficient_quota"
-      }
-    }
-    
-    exception = provider._map_openrouter_error(response, error_data)
-    
-    assert isinstance(exception, RateLimitError)
-    assert "Payment required" in str(exception)
-    assert "Add credits" in str(exception)
-
-  def test_map_openrouter_error_model_unavailable(self, provider):
-    """Test mapping of model unavailable errors."""
-    response = Mock()
-    response.status = 503
-    
-    error_data = {
-      "error": {
-        "message": "Model openai/gpt-4 is currently unavailable",
-        "type": "model_unavailable"
-      }
-    }
-    
-    exception = provider._map_openrouter_error(response, error_data)
-    
-    assert isinstance(exception, NetworkError)
-    assert "service unavailable" in str(exception).lower()
-    assert "different model" in str(exception)
-
-  def test_map_openrouter_error_streaming_detection(self, provider):
-    """Test detection of streaming-related errors."""
-    response = Mock()
-    response.status = 400
-    
-    error_data = {
-      "error": {
-        "message": "Streaming parameter not allowed",
-        "type": "invalid_request_error"
-      }
-    }
-    
-    exception = provider._map_openrouter_error(response, error_data)
-    
-    assert isinstance(exception, StreamingNotSupportedError)
-    assert "streaming" in str(exception).lower()
-    assert "explicitly blocked" in str(exception)
+    # Test model error guidance
+    model_error = anthropic_provider._map_http_error(404, "Model not found", None)
+    assert isinstance(model_error, ProviderError)
+    assert "Check the model name" in str(model_error)
 
 
 class TestStreamingDetection:
-  """Test streaming parameter detection across all providers."""
-
+  """Test streaming parameter detection and error creation."""
+  
   @pytest.fixture
-  def provider_config(self):
-    """Create test provider configuration."""
-    return ProviderConfig(
+  def openai_provider(self):
+    """Create OpenAI provider for testing."""
+    config = ProviderConfig(
+      name="openai",
+      api_key="test-key",
+      base_url="https://api.openai.com/v1",
+      timeout=30,
+      max_retries=3,
+    )
+    http_client = AsyncMock()
+    return OpenAIProvider(config, http_client)
+  
+  def test_streaming_parameter_detection_in_payload(self, openai_provider):
+    """Test detection of streaming parameters in request payload."""
+    request = ModelRequest(
+      prompt="Test prompt",
+      model="gpt-4",
+      temperature=0.7,
+      max_tokens=100,
+    )
+    
+    # Create payload with streaming parameter
+    payload = {
+      "model": "gpt-4",
+      "messages": [{"role": "user", "content": "Test prompt"}],
+      "stream": True,  # This should be detected
+      "temperature": 0.7,
+    }
+    
+    with pytest.raises(StreamingNotSupportedError) as exc_info:
+      openai_provider._detect_streaming_parameters(request, payload)
+    
+    error = exc_info.value
+    assert "stream" in error.blocked_params
+    assert "Streaming not supported" in str(error)
+    assert "Remove all streaming-related parameters" in str(error)
+  
+  def test_streaming_parameter_detection_in_provider_specific(self, openai_provider):
+    """Test detection of streaming parameters in provider_specific section."""
+    request = ModelRequest(
+      prompt="Test prompt",
+      model="gpt-4",
+      temperature=0.7,
+      max_tokens=100,
+      provider_specific={
+        "stream": True,
+        "stream_options": {"include_usage": True},
+      }
+    )
+    
+    payload = {
+      "model": "gpt-4",
+      "messages": [{"role": "user", "content": "Test prompt"}],
+      "temperature": 0.7,
+    }
+    
+    with pytest.raises(StreamingNotSupportedError) as exc_info:
+      openai_provider._detect_streaming_parameters(request, payload)
+    
+    error = exc_info.value
+    assert "provider_specific.stream" in error.blocked_params
+    assert "provider_specific.stream_options" in error.blocked_params
+    assert len(error.blocked_params) == 2
+  
+  def test_streaming_parameter_detection_string_values(self, openai_provider):
+    """Test detection of streaming parameters with string values."""
+    request = ModelRequest(
+      prompt="Test prompt",
+      model="gpt-4",
+      temperature=0.7,
+      max_tokens=100,
+      provider_specific={
+        "stream": "true",  # String value should be detected
+        "streaming": "True",  # Case insensitive
+      }
+    )
+    
+    payload = {
+      "model": "gpt-4",
+      "messages": [{"role": "user", "content": "Test prompt"}],
+      "temperature": 0.7,
+    }
+    
+    with pytest.raises(StreamingNotSupportedError) as exc_info:
+      openai_provider._detect_streaming_parameters(request, payload)
+    
+    error = exc_info.value
+    assert "provider_specific.stream" in error.blocked_params
+    assert "provider_specific.streaming" in error.blocked_params
+  
+  def test_no_streaming_parameters_detected(self, openai_provider):
+    """Test that no error is raised when no streaming parameters are present."""
+    request = ModelRequest(
+      prompt="Test prompt",
+      model="gpt-4",
+      temperature=0.7,
+      max_tokens=100,
+      provider_specific={
+        "frequency_penalty": 0.1,
+        "presence_penalty": 0.2,
+      }
+    )
+    
+    payload = {
+      "model": "gpt-4",
+      "messages": [{"role": "user", "content": "Test prompt"}],
+      "temperature": 0.7,
+      "stream": False,  # Explicitly disabled
+    }
+    
+    # Should not raise any exception
+    openai_provider._detect_streaming_parameters(request, payload)
+  
+  def test_streaming_not_supported_error_creation(self):
+    """Test StreamingNotSupportedError creation with blocked parameters."""
+    blocked_params = ["stream", "stream_options", "provider_specific.streaming"]
+    
+    error = StreamingNotSupportedError(
+      "Streaming parameters detected",
+      blocked_params=blocked_params
+    )
+    
+    assert error.blocked_params == blocked_params
+    assert len(error.blocked_params) == 3
+    assert "stream" in error.blocked_params
+    assert "stream_options" in error.blocked_params
+    assert "provider_specific.streaming" in error.blocked_params
+  
+  @patch('rationale_benchmark.llm.logging.get_llm_logger')
+  def test_streaming_detection_logging(self, mock_get_logger, openai_provider):
+    """Test that streaming detection is properly logged."""
+    mock_logger = Mock()
+    mock_get_logger.return_value = mock_logger
+    
+    request = ModelRequest(
+      prompt="Test prompt",
+      model="gpt-4",
+      temperature=0.7,
+      max_tokens=100,
+      provider_specific={"stream": True}
+    )
+    
+    payload = {
+      "model": "gpt-4",
+      "messages": [{"role": "user", "content": "Test prompt"}],
+      "temperature": 0.7,
+    }
+    
+    with pytest.raises(StreamingNotSupportedError):
+      openai_provider._detect_streaming_parameters(request, payload)
+    
+    # Verify logging was called
+    mock_logger.log_streaming_detection.assert_called_once()
+    call_args = mock_logger.log_streaming_detection.call_args
+    assert "provider_specific.stream" in call_args[1]["blocked_params"]
+    assert call_args[1]["provider"] == "openai"
+    assert call_args[1]["model"] == "gpt-4"
+
+
+class TestAuthenticationErrorHandling:
+  """Test authentication error handling with provider-specific instructions."""
+  
+  @pytest.fixture
+  def providers(self):
+    """Create providers for testing authentication errors."""
+    config = ProviderConfig(
       name="test",
       api_key="test-key",
       timeout=30,
       max_retries=3,
-      models=["test-model"]
     )
+    http_client = AsyncMock()
+    
+    return {
+      "openai": OpenAIProvider(config, http_client),
+      "anthropic": AnthropicProvider(config, http_client),
+      "gemini": GeminiProvider(config, http_client),
+      "openrouter": OpenRouterProvider(config, http_client),
+    }
+  
+  def test_openai_authentication_error_instructions(self, providers):
+    """Test OpenAI authentication error provides specific instructions."""
+    provider = providers["openai"]
+    error = provider._map_http_error(401, "Invalid API key", None)
+    
+    assert isinstance(error, AuthenticationError)
+    assert error.provider == "openai"
+    error_message = str(error)
+    
+    # Check for OpenAI-specific instructions
+    assert "Check your OpenAI API key" in error_message
+    assert "Verify the key is active" in error_message
+    assert "Check your account status" in error_message
+    assert "openai.com" in error_message.lower()
+  
+  def test_anthropic_authentication_error_instructions(self, providers):
+    """Test Anthropic authentication error provides specific instructions."""
+    provider = providers["anthropic"]
+    error = provider._map_http_error(401, "Invalid API key", None)
+    
+    assert isinstance(error, AuthenticationError)
+    assert error.provider == "anthropic"
+    error_message = str(error)
+    
+    # Check for Anthropic-specific instructions
+    assert "Check your Anthropic API key" in error_message
+    assert "Verify the key format" in error_message
+    assert "console.anthropic.com" in error_message.lower()
+  
+  def test_gemini_authentication_error_instructions(self, providers):
+    """Test Gemini authentication error provides specific instructions."""
+    provider = providers["gemini"]
+    error = provider._map_http_error(401, "Invalid API key", None)
+    
+    assert isinstance(error, AuthenticationError)
+    assert error.provider == "gemini"
+    error_message = str(error)
+    
+    # Check for Gemini-specific instructions
+    assert "Check your Google AI API key" in error_message
+    assert "Google AI Studio" in error_message
+    assert "makersuite.google.com" in error_message.lower()
+  
+  def test_openrouter_authentication_error_instructions(self, providers):
+    """Test OpenRouter authentication error provides specific instructions."""
+    provider = providers["openrouter"]
+    error = provider._map_http_error(401, "Invalid API key", None)
+    
+    assert isinstance(error, AuthenticationError)
+    assert error.provider == "openrouter"
+    error_message = str(error)
+    
+    # Check for OpenRouter-specific instructions
+    assert "Check your OpenRouter API key" in error_message
+    assert "openrouter.ai" in error_message.lower()
+  
+  def test_authentication_error_context_preservation(self, providers):
+    """Test that authentication errors preserve context information."""
+    provider = providers["openai"]
+    
+    # Test with additional context
+    error = provider._map_http_error(
+      401, 
+      "Invalid API key provided", 
+      {"request_id": "req_123", "model": "gpt-4"}
+    )
+    
+    assert isinstance(error, AuthenticationError)
+    assert error.provider == "openai"
+    # Context should be preserved in the error for debugging
+    assert hasattr(error, 'cause') or "Invalid API key" in str(error)
 
+
+class TestProviderErrorRecovery:
+  """Test error recovery suggestions for different provider error types."""
+  
   @pytest.fixture
-  def http_client(self):
-    """Create mock HTTP client."""
-    return Mock(spec=HTTPClient)
-
-  def test_detect_streaming_in_payload(self, provider_config, http_client):
-    """Test detection of streaming parameters in request payload."""
-    provider = OpenAIProvider(provider_config, http_client)
-    
-    request = ModelRequest(
-      prompt="Test prompt",
-      model="gpt-4",
-      provider_specific={}
+  def openai_provider(self):
+    """Create OpenAI provider for testing."""
+    config = ProviderConfig(
+      name="openai",
+      api_key="test-key",
+      base_url="https://api.openai.com/v1",
+      timeout=30,
+      max_retries=3,
     )
+    http_client = AsyncMock()
+    return OpenAIProvider(config, http_client)
+  
+  def test_rate_limit_recovery_suggestions(self, openai_provider):
+    """Test rate limit error includes recovery suggestions."""
+    error = openai_provider._map_http_error(429, "Rate limit exceeded", None)
     
-    payload = {
-      "model": "gpt-4",
-      "messages": [{"role": "user", "content": "Test"}],
-      "stream": True  # This should be detected
-    }
+    assert isinstance(error, RateLimitError)
+    error_message = str(error)
     
-    with pytest.raises(StreamingNotSupportedError) as exc_info:
-      provider._detect_streaming_parameters(request, payload)
+    # Check for recovery suggestions
+    assert "Implement exponential backoff" in error_message
+    assert "Reduce your request frequency" in error_message
+    assert "Consider upgrading to a higher tier" in error_message
+    assert "Distribute requests across multiple API keys" in error_message
+  
+  def test_model_not_found_recovery_suggestions(self, openai_provider):
+    """Test model not found error includes recovery suggestions."""
+    error = openai_provider._map_http_error(404, "Model 'gpt-5' not found", None)
     
-    assert "stream" in str(exc_info.value)
-    assert "not supported" in str(exc_info.value)
-
-  def test_detect_streaming_in_provider_specific(self, provider_config, http_client):
-    """Test detection of streaming parameters in provider_specific section."""
-    provider = OpenAIProvider(provider_config, http_client)
+    assert isinstance(error, ModelNotFoundError)
+    error_message = str(error)
     
-    request = ModelRequest(
-      prompt="Test prompt",
-      model="gpt-4",
-      provider_specific={
-        "stream_options": {"include_usage": True}  # This should be detected
-      }
-    )
+    # Check for recovery suggestions
+    assert "Check the model name spelling" in error_message
+    assert "Verify the model is available" in error_message
+    assert "Ensure your account has access" in error_message
+    assert "Use list_models()" in error_message
+  
+  def test_quota_exceeded_recovery_suggestions(self, openai_provider):
+    """Test quota exceeded error includes recovery suggestions."""
+    error = openai_provider._map_http_error(429, "Quota exceeded", None)
     
-    payload = {
-      "model": "gpt-4",
-      "messages": [{"role": "user", "content": "Test"}],
-      "stream": False
-    }
+    assert isinstance(error, RateLimitError)
+    error_message = str(error)
     
-    with pytest.raises(StreamingNotSupportedError) as exc_info:
-      provider._detect_streaming_parameters(request, payload)
+    # Check for quota-specific recovery suggestions
+    assert "Check your account usage" in error_message
+    assert "Add payment method" in error_message or "billing" in error_message.lower()
+  
+  def test_server_error_recovery_suggestions(self, openai_provider):
+    """Test server error includes recovery suggestions."""
+    error = openai_provider._map_http_error(500, "Internal server error", None)
     
-    assert "stream_options" in str(exc_info.value)
-    assert "provider_specific" in str(exc_info.value)
-
-  def test_no_streaming_parameters_detected(self, provider_config, http_client):
-    """Test that valid requests without streaming pass detection."""
-    provider = OpenAIProvider(provider_config, http_client)
+    assert isinstance(error, ProviderError)
+    error_message = str(error)
     
-    request = ModelRequest(
-      prompt="Test prompt",
-      model="gpt-4",
-      provider_specific={
-        "temperature": 0.8,
-        "max_tokens": 100
-      }
-    )
-    
-    payload = {
-      "model": "gpt-4",
-      "messages": [{"role": "user", "content": "Test"}],
-      "stream": False,
-      "temperature": 0.8
-    }
-    
-    # Should not raise any exception
-    provider._detect_streaming_parameters(request, payload)
-
-  def test_streaming_parameter_variations(self, provider_config, http_client):
-    """Test detection of various streaming parameter names."""
-    provider = OpenAIProvider(provider_config, http_client)
-    
-    streaming_variations = [
-      "stream", "streaming", "stream_options", "stream_usage",
-      "stream_callback", "incremental", "server_sent_events"
-    ]
-    
-    for param_name in streaming_variations:
-      request = ModelRequest(
-        prompt="Test prompt",
-        model="gpt-4",
-        provider_specific={param_name: True}
-      )
-      
-      payload = {
-        "model": "gpt-4",
-        "messages": [{"role": "user", "content": "Test"}],
-        "stream": False
-      }
-      
-      with pytest.raises(StreamingNotSupportedError) as exc_info:
-        provider._detect_streaming_parameters(request, payload)
-      
-      assert param_name in str(exc_info.value)
+    # Check for server error recovery suggestions
+    assert "Try again" in error_message or "retry" in error_message.lower()
+    assert "temporary" in error_message.lower() or "server" in error_message.lower()

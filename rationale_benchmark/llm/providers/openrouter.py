@@ -18,6 +18,7 @@ from rationale_benchmark.llm.exceptions import (
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
 from rationale_benchmark.llm.providers.base import LLMProvider
+from rationale_benchmark.llm.validation import ResponseValidator
 
 logger = logging.getLogger(__name__)
 
@@ -506,163 +507,53 @@ class OpenRouterProvider(LLMProvider):
     )
 
   def _validate_response_structure(self, response_data: Dict[str, Any]) -> None:
-    """Comprehensive validation of OpenAI response structure.
+    """Comprehensive validation of OpenRouter response structure using enhanced validator.
     
-    This method performs exhaustive validation of the OpenAI API response
-    to ensure all required fields are present and properly formatted.
+    This method uses the ResponseValidator utility to perform exhaustive validation
+    of the OpenRouter API response (OpenAI-compatible format) with detailed error 
+    reporting and recovery suggestions.
     
     Args:
-      response_data: Raw response dictionary from OpenAI API
+      response_data: Raw response dictionary from OpenRouter API
       
     Raises:
-      ResponseValidationError: If any validation check fails
+      ResponseValidationError: If any validation check fails with detailed context
     """
-    # Validate response is not empty
+    # Validate response is not empty first
     self._validate_response_not_empty(response_data)
     
-    # Check top-level required fields
-    required_fields = ["choices", "model", "usage", "object"]
-    for field in required_fields:
-      if field not in response_data:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in OpenRouter response",
-          provider="openrouter",
-          response_data=response_data
+    # Use the enhanced ResponseValidator for comprehensive validation
+    # OpenRouter uses OpenAI-compatible format
+    validator = ResponseValidator("openrouter")
+    
+    try:
+      validator.validate_openai_response(response_data)
+      
+      # Additional validation for streaming indicators (should never be present)
+      if "stream" in response_data and response_data["stream"]:
+        error = validator.create_validation_error_with_context(
+          "OpenRouter response indicates streaming mode, but streaming is not supported",
+          response_data,
+          {"streaming_detected": True, "stream_value": response_data["stream"]}
         )
-    
-    # Validate object type
-    if response_data["object"] != "chat.completion":
-      raise ResponseValidationError(
-        f"Invalid object type in OpenRouter response: expected 'chat.completion', "
-        f"got '{response_data['object']}'",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Validate choices array
-    if not isinstance(response_data["choices"], list) or not response_data["choices"]:
-      raise ResponseValidationError(
-        "OpenRouter response 'choices' must be a non-empty array",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Validate first choice structure (we only use the first choice)
-    choice = response_data["choices"][0]
-    required_choice_fields = ["message", "finish_reason", "index"]
-    for field in required_choice_fields:
-      if field not in choice:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in OpenRouter choice",
-          provider="openrouter",
-          response_data=response_data
-        )
-    
-    # Validate choice index
-    if not isinstance(choice["index"], int) or choice["index"] < 0:
-      raise ResponseValidationError(
-        f"Invalid choice index in OpenRouter response: {choice['index']}",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Validate message structure
-    message = choice["message"]
-    if not isinstance(message, dict):
-      raise ResponseValidationError(
-        "OpenRouter response message must be a dictionary",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    required_message_fields = ["content", "role"]
-    for field in required_message_fields:
-      if field not in message:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in OpenRouter message",
-          provider="openrouter",
-          response_data=response_data
-        )
-    
-    # Validate message role
-    if message["role"] != "assistant":
-      raise ResponseValidationError(
-        f"Invalid message role in OpenRouter response: expected 'assistant', "
-        f"got '{message['role']}'",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Validate content is not empty
-    if not message["content"] or not isinstance(message["content"], str):
-      raise ResponseValidationError(
-        "OpenRouter response message content must be a non-empty string",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    if len(message["content"].strip()) == 0:
-      raise ResponseValidationError(
-        "OpenRouter response message content cannot be empty or whitespace only",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Validate finish reason
-    valid_finish_reasons = ["stop", "length", "function_call", "content_filter", "null"]
-    if choice["finish_reason"] not in valid_finish_reasons:
-      logger.warning(f"Unexpected finish reason in OpenRouter response: {choice['finish_reason']}")
-    
-    # Validate usage information
-    usage = response_data["usage"]
-    if not isinstance(usage, dict):
-      raise ResponseValidationError(
-        "OpenRouter usage must be a dictionary",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    required_usage_fields = ["prompt_tokens", "completion_tokens", "total_tokens"]
-    for field in required_usage_fields:
-      if field not in usage:
-        raise ResponseValidationError(
-          f"Missing usage field '{field}' in OpenRouter response",
-          provider="openrouter",
-          response_data=response_data
-        )
-      if not isinstance(usage[field], int) or usage[field] < 0:
-        raise ResponseValidationError(
-          f"OpenRouter usage field '{field}' must be a non-negative integer, got {usage[field]}",
-          provider="openrouter",
-          response_data=response_data
-        )
-    
-    # Validate token count consistency
-    if usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]:
-      raise ResponseValidationError(
-        f"OpenRouter token count inconsistency: total={usage['total_tokens']}, "
-        f"sum={usage['prompt_tokens'] + usage['completion_tokens']}",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Validate model field
-    if not isinstance(response_data["model"], str) or not response_data["model"]:
-      raise ResponseValidationError(
-        "OpenRouter response model must be a non-empty string",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    # Additional validation for streaming indicators (should never be present)
-    if "stream" in response_data and response_data["stream"]:
-      raise ResponseValidationError(
-        "OpenRouter response indicates streaming mode, but streaming is not supported",
-        provider="openrouter",
-        response_data=response_data
-      )
-    
-    logger.debug(f"OpenRouter response structure validation passed for model {response_data['model']}")
+        error.add_recovery_suggestion("Ensure stream parameter is set to False in API requests")
+        error.add_recovery_suggestion("Check request preparation logic for streaming parameter removal")
+        raise error
+      
+      logger.debug(f"OpenRouter response structure validation passed for model {response_data.get('model', 'unknown')}")
+      
+    except ResponseValidationError as e:
+      # Add OpenRouter-specific context and recovery suggestions if not already present
+      if not e.recovery_suggestions:
+        e.add_recovery_suggestion("Check OpenRouter API documentation for correct response format")
+        e.add_recovery_suggestion("Verify API key has proper permissions for the requested model")
+        e.add_recovery_suggestion("Ensure request parameters match OpenRouter API requirements")
+      
+      # Add additional context about the validation failure
+      if not e.validation_context.get("model"):
+        e.validation_context["model"] = response_data.get("model", "unknown")
+      
+      raise e
 
   def _is_valid_openrouter_parameter(self, key: str, value: Any) -> bool:
     """Validate that a parameter is valid for OpenRouter API.

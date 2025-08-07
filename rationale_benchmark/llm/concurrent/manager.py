@@ -8,8 +8,9 @@ from rationale_benchmark.llm.models import ModelRequest, ModelResponse
 from rationale_benchmark.llm.providers.base import LLMProvider
 from rationale_benchmark.llm.concurrent.queue import ProviderRequestQueue
 from rationale_benchmark.llm.concurrent.validator import ResponseValidator
+from rationale_benchmark.llm.logging import get_llm_logger
 
-logger = logging.getLogger(__name__)
+logger = get_llm_logger(__name__)
 
 
 class ConcurrentLLMManager:
@@ -177,16 +178,40 @@ class ConcurrentLLMManager:
     if not requests:
       return []
     
+    # Log initial queue status
+    for provider_name, queue in self._provider_queues.items():
+      status = queue.get_status()
+      logger.log_queue_status(
+        provider=provider_name,
+        queue_size=status["queue_size"],
+        active_requests=1 if status["worker_running"] else 0,
+        total_processed=status["total_processed"],
+      )
+    
     # Submit all requests
     futures = await self.submit_multiple_requests(requests)
     
     # Wait for all responses
     responses = await asyncio.gather(*futures)
     
+    # Log final status
+    successful_responses = len([r for r in responses if r is not None])
     logger.info(
-      f"Completed processing {len(requests)} requests with "
-      f"{len([r for r in responses if r is not None])} successful responses"
+      "Concurrent processing completed",
+      total_requests=len(requests),
+      successful_responses=successful_responses,
+      failed_requests=len(requests) - successful_responses,
     )
+    
+    # Log final queue status
+    for provider_name, queue in self._provider_queues.items():
+      status = queue.get_status()
+      logger.log_queue_status(
+        provider=provider_name,
+        queue_size=status["queue_size"],
+        active_requests=1 if status["worker_running"] else 0,
+        total_processed=status["total_processed"],
+      )
     
     return responses
 

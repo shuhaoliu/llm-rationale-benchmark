@@ -18,8 +18,10 @@ from rationale_benchmark.llm.exceptions import (
 from rationale_benchmark.llm.http.client import HTTPClient
 from rationale_benchmark.llm.models import ModelRequest, ModelResponse, ProviderConfig
 from rationale_benchmark.llm.providers.base import LLMProvider
+from rationale_benchmark.llm.validation import ResponseValidator
+from rationale_benchmark.llm.logging import get_llm_logger
 
-logger = logging.getLogger(__name__)
+logger = get_llm_logger(__name__, "openai")
 
 
 class OpenAIProvider(LLMProvider):
@@ -220,6 +222,16 @@ class OpenAIProvider(LLMProvider):
     # Explicitly disable streaming - this is critical
     payload["stream"] = False
     
+    # Log the request with context
+    logger.log_request(
+      method="POST",
+      url=f"{self.base_url}/chat/completions",
+      model=request.model,
+      request_data=payload,
+      temperature=request.temperature,
+      max_tokens=request.max_tokens,
+    )
+    
     start_time = time.time()
     
     try:
@@ -236,6 +248,14 @@ class OpenAIProvider(LLMProvider):
       response_data = await response.json()
       
     except Exception as e:
+      latency_ms = self._measure_latency(start_time)
+      logger.log_response(
+        status_code=getattr(response, 'status', 0) if 'response' in locals() else 0,
+        model=request.model,
+        latency_ms=latency_ms,
+        error=str(e),
+      )
+      
       if isinstance(e, (AuthenticationError, ModelNotFoundError, ProviderError)):
         raise
       raise ProviderError("openai", f"Request failed: {str(e)}", e)
@@ -243,14 +263,28 @@ class OpenAIProvider(LLMProvider):
     latency_ms = self._measure_latency(start_time)
     
     # Validate response structure BEFORE parsing
-    self._validate_response_structure(response_data)
+    try:
+      self._validate_response_structure(response_data)
+    except ResponseValidationError as e:
+      logger.log_validation_error(
+        error_type="response_structure",
+        field_errors=e.field_errors,
+        provider="openai",
+        model=request.model,
+        latency_ms=latency_ms,
+      )
+      raise
     
     # Parse response after validation
     parsed_response = self._parse_response(response_data, request, latency_ms)
     
-    logger.debug(
-      f"OpenAI response generated successfully for model {request.model} "
-      f"in {latency_ms}ms"
+    # Log successful response
+    logger.log_response(
+      status_code=response.status,
+      model=request.model,
+      latency_ms=latency_ms,
+      response_data=response_data,
+      token_count=parsed_response.token_count,
     )
     
     return parsed_response
@@ -406,163 +440,51 @@ class OpenAIProvider(LLMProvider):
     )
 
   def _validate_response_structure(self, response_data: Dict[str, Any]) -> None:
-    """Comprehensive validation of OpenAI response structure.
+    """Comprehensive validation of OpenAI response structure using enhanced validator.
     
-    This method performs exhaustive validation of the OpenAI API response
-    to ensure all required fields are present and properly formatted.
+    This method uses the ResponseValidator utility to perform exhaustive validation
+    of the OpenAI API response with detailed error reporting and recovery suggestions.
     
     Args:
       response_data: Raw response dictionary from OpenAI API
       
     Raises:
-      ResponseValidationError: If any validation check fails
+      ResponseValidationError: If any validation check fails with detailed context
     """
-    # Validate response is not empty
+    # Validate response is not empty first
     self._validate_response_not_empty(response_data)
     
-    # Check top-level required fields
-    required_fields = ["choices", "model", "usage", "object"]
-    for field in required_fields:
-      if field not in response_data:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in OpenAI response",
-          provider="openai",
-          response_data=response_data
+    # Use the enhanced ResponseValidator for comprehensive validation
+    validator = ResponseValidator("openai")
+    
+    try:
+      validator.validate_openai_response(response_data)
+      
+      # Additional validation for streaming indicators (should never be present)
+      if "stream" in response_data and response_data["stream"]:
+        error = validator.create_validation_error_with_context(
+          "OpenAI response indicates streaming mode, but streaming is not supported",
+          response_data,
+          {"streaming_detected": True, "stream_value": response_data["stream"]}
         )
-    
-    # Validate object type
-    if response_data["object"] != "chat.completion":
-      raise ResponseValidationError(
-        f"Invalid object type in OpenAI response: expected 'chat.completion', "
-        f"got '{response_data['object']}'",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Validate choices array
-    if not isinstance(response_data["choices"], list) or not response_data["choices"]:
-      raise ResponseValidationError(
-        "OpenAI response 'choices' must be a non-empty array",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Validate first choice structure (we only use the first choice)
-    choice = response_data["choices"][0]
-    required_choice_fields = ["message", "finish_reason", "index"]
-    for field in required_choice_fields:
-      if field not in choice:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in OpenAI choice",
-          provider="openai",
-          response_data=response_data
-        )
-    
-    # Validate choice index
-    if not isinstance(choice["index"], int) or choice["index"] < 0:
-      raise ResponseValidationError(
-        f"Invalid choice index in OpenAI response: {choice['index']}",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Validate message structure
-    message = choice["message"]
-    if not isinstance(message, dict):
-      raise ResponseValidationError(
-        "OpenAI response message must be a dictionary",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    required_message_fields = ["content", "role"]
-    for field in required_message_fields:
-      if field not in message:
-        raise ResponseValidationError(
-          f"Missing required field '{field}' in OpenAI message",
-          provider="openai",
-          response_data=response_data
-        )
-    
-    # Validate message role
-    if message["role"] != "assistant":
-      raise ResponseValidationError(
-        f"Invalid message role in OpenAI response: expected 'assistant', "
-        f"got '{message['role']}'",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Validate content is not empty
-    if not message["content"] or not isinstance(message["content"], str):
-      raise ResponseValidationError(
-        "OpenAI response message content must be a non-empty string",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    if len(message["content"].strip()) == 0:
-      raise ResponseValidationError(
-        "OpenAI response message content cannot be empty or whitespace only",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Validate finish reason
-    valid_finish_reasons = ["stop", "length", "function_call", "content_filter", "null"]
-    if choice["finish_reason"] not in valid_finish_reasons:
-      logger.warning(f"Unexpected finish reason in OpenAI response: {choice['finish_reason']}")
-    
-    # Validate usage information
-    usage = response_data["usage"]
-    if not isinstance(usage, dict):
-      raise ResponseValidationError(
-        "OpenAI usage must be a dictionary",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    required_usage_fields = ["prompt_tokens", "completion_tokens", "total_tokens"]
-    for field in required_usage_fields:
-      if field not in usage:
-        raise ResponseValidationError(
-          f"Missing usage field '{field}' in OpenAI response",
-          provider="openai",
-          response_data=response_data
-        )
-      if not isinstance(usage[field], int) or usage[field] < 0:
-        raise ResponseValidationError(
-          f"OpenAI usage field '{field}' must be a non-negative integer, got {usage[field]}",
-          provider="openai",
-          response_data=response_data
-        )
-    
-    # Validate token count consistency
-    if usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]:
-      raise ResponseValidationError(
-        f"OpenAI token count inconsistency: total={usage['total_tokens']}, "
-        f"sum={usage['prompt_tokens'] + usage['completion_tokens']}",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Validate model field
-    if not isinstance(response_data["model"], str) or not response_data["model"]:
-      raise ResponseValidationError(
-        "OpenAI response model must be a non-empty string",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    # Additional validation for streaming indicators (should never be present)
-    if "stream" in response_data and response_data["stream"]:
-      raise ResponseValidationError(
-        "OpenAI response indicates streaming mode, but streaming is not supported",
-        provider="openai",
-        response_data=response_data
-      )
-    
-    logger.debug(f"OpenAI response structure validation passed for model {response_data['model']}")
+        error.add_recovery_suggestion("Ensure stream parameter is set to False in API requests")
+        error.add_recovery_suggestion("Check request preparation logic for streaming parameter removal")
+        raise error
+      
+      logger.debug(f"OpenAI response structure validation passed for model {response_data.get('model', 'unknown')}")
+      
+    except ResponseValidationError as e:
+      # Add OpenAI-specific context and recovery suggestions if not already present
+      if not e.recovery_suggestions:
+        e.add_recovery_suggestion("Check OpenAI API documentation for correct response format")
+        e.add_recovery_suggestion("Verify API key has proper permissions for the requested model")
+        e.add_recovery_suggestion("Ensure request parameters match OpenAI API requirements")
+      
+      # Add additional context about the validation failure
+      if not e.validation_context.get("model"):
+        e.validation_context["model"] = response_data.get("model", "unknown")
+      
+      raise e
 
   def _is_valid_openai_parameter(self, key: str, value: Any) -> bool:
     """Validate that a parameter is valid for OpenAI API.
