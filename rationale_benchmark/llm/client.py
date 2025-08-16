@@ -657,21 +657,32 @@ class LLMClient:
       for i, (original_index, request, provider_name) in enumerate(validated_requests):
         response = responses[i]
         
-        try:
-          # Additional response validation at client level
-          self._validate_response_structure(response, request, provider_name)
-          validated_responses.append(response)
-          
-        except Exception as e:
-          # Create error response for failed validation
+        if isinstance(response, Exception):
+          # Create error response for exceptions returned by gather
           error_response = self._create_error_response(
-            request, provider_name, f"Response validation failed: {str(e)}"
+            request, provider_name, f"Request failed with exception: {str(response)}"
           )
           validated_responses.append(error_response)
           logger.error(
-            f"Response validation failed for request {original_index} "
-            f"(model: {request.model}): {e}"
+            f"Request {original_index} failed with exception "
+            f"(model: {request.model}): {response}"
           )
+        else:
+          try:
+            # Additional response validation at client level
+            self._validate_response_structure(response, request, provider_name)
+            validated_responses.append(response)
+
+          except Exception as e:
+            # Create error response for failed validation
+            error_response = self._create_error_response(
+              request, provider_name, f"Response validation failed: {str(e)}"
+            )
+            validated_responses.append(error_response)
+            logger.error(
+              f"Response validation failed for request {original_index} "
+              f"(model: {request.model}): {e}"
+            )
       
       # Log completion statistics
       successful_responses = sum(

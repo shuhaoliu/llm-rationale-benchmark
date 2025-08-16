@@ -192,7 +192,7 @@ class ConcurrentLLMManager:
     futures = await self.submit_multiple_requests(requests)
     
     # Wait for all responses
-    responses = await asyncio.gather(*futures)
+    responses = await asyncio.gather(*futures, return_exceptions=True)
     
     # Log final status
     successful_responses = len([r for r in responses if r is not None])

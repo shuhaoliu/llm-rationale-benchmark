@@ -254,8 +254,8 @@ class GeminiProvider(LLMProvider):
     """
     headers = {
       "Content-Type": "application/json",
-      "x-goog-api-key": self.config.api_key
     }
+    params = {"key": self.config.api_key}
     
     # Prepare request payload (this will validate no streaming params)
     payload = self._prepare_request(request)
@@ -269,7 +269,8 @@ class GeminiProvider(LLMProvider):
       response = await self.http_client.post(
         url,
         json=payload,
-        headers=headers
+        headers=headers,
+        params=params
       )
       
       # Handle HTTP errors
@@ -344,13 +345,13 @@ class GeminiProvider(LLMProvider):
     """
     headers = {
       "Content-Type": "application/json",
-      "x-goog-api-key": self.config.api_key
     }
+    params = {"key": self.config.api_key}
     
     url = f"{self.base_url}/models"
     
     try:
-      response = await self.http_client.get(url, headers=headers)
+      response = await self.http_client.get(url, headers=headers, params=params)
       
       if response.status != 200:
         await self._handle_api_error(response, "models")
@@ -540,6 +541,8 @@ class GeminiProvider(LLMProvider):
       metadata["promptTokenCount"] = usage_metadata["promptTokenCount"]
     if "candidatesTokenCount" in usage_metadata:
       metadata["candidatesTokenCount"] = usage_metadata["candidatesTokenCount"]
+    if "totalTokenCount" in usage_metadata:
+      metadata["total_token_count"] = usage_metadata["totalTokenCount"]
     if "modelVersion" in response_data:
       metadata["modelVersion"] = response_data["modelVersion"]
     if "safetyRatings" in candidate:

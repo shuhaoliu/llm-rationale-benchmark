@@ -436,15 +436,12 @@ class OpenRouterProvider(LLMProvider):
     }
     
     for key, value in request.provider_specific.items():
-      if key not in streaming_params and key not in payload:
+      if key not in streaming_params:
         # Validate parameter before adding
         if self._is_valid_openrouter_parameter(key, value):
           payload[key] = value
         else:
           logger.warning(f"Skipped invalid OpenRouter parameter '{key}': {value}")
-      elif key in payload:
-        # Don't override base parameters
-        logger.warning(f"Skipped provider_specific parameter '{key}' that would override base parameter")
     
     # Use base class streaming detection for comprehensive validation
     self._detect_streaming_parameters(request, payload)

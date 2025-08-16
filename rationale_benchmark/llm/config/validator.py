@@ -434,15 +434,12 @@ class ConfigValidator:
     if api_key.startswith("test-"):
       return None
 
-    # Validate against known patterns if available (but be more lenient)
+    # Validate against known patterns if available
     provider_type = provider_name.lower()
     if provider_type in self.ENV_VAR_PATTERNS:
       pattern = self.ENV_VAR_PATTERNS[provider_type]
       if not re.match(pattern, api_key):
-        # Only warn for pattern mismatch, don't fail validation for test scenarios
-        # This allows test keys to pass validation
-        if not (api_key.startswith("sk-") or api_key.startswith("test") or len(api_key) >= 20):
-          return f"Provider '{provider_name}' {key_name} format appears invalid for {provider_type}"
+        return f"Provider '{provider_name}' {key_name} format appears invalid for {provider_type}"
 
     return None
 

@@ -43,6 +43,7 @@ dev = [
   "ruff>=0.1.0",
   "mypy>=1.0.0",
   "coverage>=7.0.0",
+  "aresponses>=2.1.6",
 ]
 docs = [
   "sphinx>=5.0.0",
@@ -133,6 +134,7 @@ exclude_lines = [
 
 [dependency-groups]
 dev = [
+    "aresponses>=2.1.6",
     "black>=25.1.0",
     "coverage>=7.9.2",
     "mypy>=1.17.0",
