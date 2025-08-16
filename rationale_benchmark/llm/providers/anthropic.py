@@ -181,6 +181,26 @@ class AnthropicProvider(LLMProvider):
       )
       return StreamingNotSupportedError(f"Anthropic streaming error: {error_message}. {guidance}")
     
+    # Check for model not found in other error codes as well
+    if "model" in error_message.lower() and "does not exist" in error_message.lower():
+        guidance = (
+          "Anthropic model not found. Please:\n"
+          "1. Check the model name spelling (e.g., 'claude-3-opus-20240229')\n"
+          "2. Verify the model is available in your region\n"
+          "3. Ensure your account has access to the requested Claude model\n"
+          "4. Use list_models() to see available models"
+        )
+        # Try to extract model name from error message
+        model_name = "unknown"
+        if "model" in error_message.lower():
+          # Simple extraction - could be improved with regex
+          words = error_message.split()
+          for i, word in enumerate(words):
+            if "model" in word.lower() and i + 1 < len(words):
+              model_name = words[i + 1].strip("'\"")
+              break
+        return ModelNotFoundError("anthropic", model_name)
+
     # Generic error with troubleshooting guidance
     guidance = (
       "General Anthropic API error troubleshooting:\n"
@@ -203,8 +223,8 @@ class AnthropicProvider(LLMProvider):
     # Validate API key presence
     if not self.config.api_key:
       errors.append("Anthropic API key is required")
-    elif not self.config.api_key.startswith("sk-ant-api"):
-      errors.append("Anthropic API key format is invalid (should start with 'sk-ant-api')")
+    elif not self.config.api_key.startswith("sk-ant-"):
+      errors.append("Anthropic API key format is invalid (should start with 'sk-ant-')")
     
     # Validate base URL if provided
     if self.config.base_url and not self.config.base_url.startswith("https://"):
@@ -356,17 +376,11 @@ class AnthropicProvider(LLMProvider):
     if request.stop_sequences:
       payload["stop_sequences"] = request.stop_sequences
     
-    # Add provider-specific parameters (excluding streaming and protected params)
-    streaming_params = {
-      "stream", "streaming", "stream_options", "stream_usage", 
-      "stream_callback", "stream_handler", "incremental"
-    }
-    
-    # Parameters that should not be overridden by provider_specific
+    # Add provider-specific parameters (excluding protected params)
     protected_params = {"model", "messages", "max_tokens", "temperature", "system", "stop_sequences"}
     
     for key, value in request.provider_specific.items():
-      if key not in streaming_params and key not in protected_params:
+      if key not in protected_params:
         # Validate parameter before adding
         if self._is_valid_anthropic_parameter(key, value):
           payload[key] = value

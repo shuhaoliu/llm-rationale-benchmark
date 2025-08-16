@@ -286,7 +286,7 @@ class LLMLogger:
       context["request_keys"] = list(request_data.keys()) if isinstance(request_data, dict) else []
       
       # Only include request data in debug mode
-      if self.logger.isEnabledFor(logging.DEBUG):
+      if self.logger.is_enabled_for(logging.DEBUG):
         context["request_data"] = filtered_request
     
     self.info("LLM API request initiated", **context)
@@ -326,7 +326,7 @@ class LLMLogger:
       context["response_keys"] = list(response_data.keys()) if isinstance(response_data, dict) else []
       
       # Only include response data in debug mode
-      if self.logger.isEnabledFor(logging.DEBUG):
+      if self.logger.is_enabled_for(logging.DEBUG):
         filtered_response = SensitiveDataFilter.filter_sensitive_data(response_data)
         context["response_data"] = filtered_response
     
@@ -383,7 +383,7 @@ class LLMLogger:
     }
     
     # Include field errors in debug mode
-    if self.logger.isEnabledFor(logging.DEBUG):
+    if self.logger.is_enabled_for(logging.DEBUG):
       context["field_errors"] = field_errors
     
     self.error("Response validation failed", **context)
@@ -433,7 +433,7 @@ def is_debug_enabled() -> bool:
   Returns:
     True if debug logging is enabled
   """
-  return logging.getLogger().isEnabledFor(logging.DEBUG)
+  return logging.getLogger().is_enabled_for(logging.DEBUG)
 
 
 def log_system_info() -> None:

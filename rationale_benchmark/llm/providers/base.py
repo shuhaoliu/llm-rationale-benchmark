@@ -262,9 +262,11 @@ class LLMProvider(ABC):
     if request.provider_specific:
       for param in streaming_params:
         if param in request.provider_specific:
+          # Handle boolean, string, dictionary, and function types for streaming params
           if (request.provider_specific[param] is True or 
-              (isinstance(request.provider_specific[param], str) and 
-               request.provider_specific[param].lower() == "true")):
+              isinstance(request.provider_specific[param], str) or
+              isinstance(request.provider_specific[param], dict) or
+              callable(request.provider_specific[param])):
             blocked_params.append(f"provider_specific.{param}")
     
     # Log streaming parameter detection if any found

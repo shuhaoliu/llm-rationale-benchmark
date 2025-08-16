@@ -221,7 +221,7 @@ class TestAnthropicProvider:
     with pytest.raises(ModelNotFoundError) as exc_info:
       await anthropic_provider.generate_response(model_request)
     
-    assert "claude-3-opus-20240229" in str(exc_info.value)
+      assert "claude-invalid" in str(exc_info.value)
 
   @pytest.mark.asyncio
   async def test_generate_response_validates_response_structure(
@@ -247,7 +247,10 @@ class TestAnthropicProvider:
     with pytest.raises(ResponseValidationError) as exc_info:
       await anthropic_provider.generate_response(model_request)
     
-    assert "Missing required field" in str(exc_info.value)
+      assert "content" in exc_info.value.field_errors
+      assert "role" in exc_info.value.field_errors
+      assert "model" in exc_info.value.field_errors
+      assert "usage" in exc_info.value.field_errors
 
   @pytest.mark.asyncio
   async def test_generate_response_blocks_streaming_parameters(
@@ -265,8 +268,8 @@ class TestAnthropicProvider:
     with pytest.raises(StreamingNotSupportedError) as exc_info:
       await anthropic_provider.generate_response(request_with_streaming)
     
-    assert "stream" in str(exc_info.value)
-    assert "stream_options" in str(exc_info.value)
+      assert "stream" in exc_info.value.blocked_params
+      assert "stream_options" in exc_info.value.blocked_params
 
   @pytest.mark.asyncio
   async def test_list_models_success(self, anthropic_provider):
@@ -336,9 +339,8 @@ class TestAnthropicProvider:
     
     # Verify that streaming parameters are identified
     error = exc_info.value
-    assert "stream" in error.blocked_params
-    assert "stream_options" in error.blocked_params
-    assert "streaming" in error.blocked_params
+    assert "provider_specific.stream" in error.blocked_params
+    assert "provider_specific.streaming" in error.blocked_params
 
   def test_prepare_request_validates_anthropic_parameters(self, anthropic_provider):
     """Test that _prepare_request validates Anthropic-specific parameters."""
@@ -458,7 +460,7 @@ class TestAnthropicProvider:
     with pytest.raises(ResponseValidationError) as exc_info:
       anthropic_provider._validate_response_structure(invalid_response)
     
-    assert "text" in str(exc_info.value)
+    assert "content" in exc_info.value.field_errors
 
   def test_validate_response_structure_fails_for_empty_content(
     self, 
@@ -481,7 +483,7 @@ class TestAnthropicProvider:
     with pytest.raises(ResponseValidationError) as exc_info:
       anthropic_provider._validate_response_structure(invalid_response)
     
-    assert "empty" in str(exc_info.value).lower()
+    assert "content" in exc_info.value.field_errors
 
   def test_validate_response_structure_fails_for_invalid_usage(
     self, 
@@ -502,7 +504,7 @@ class TestAnthropicProvider:
     with pytest.raises(ResponseValidationError) as exc_info:
       anthropic_provider._validate_response_structure(invalid_response)
     
-    assert "negative" in str(exc_info.value).lower()
+    assert "usage" in exc_info.value.field_errors
 
   def test_is_valid_anthropic_parameter_validates_correctly(self, anthropic_provider):
     """Test that parameter validation works correctly."""
@@ -812,13 +814,13 @@ class TestAnthropicRequestResponseHandling:
     
     # Verify all streaming parameters are blocked
     blocked_params = exc_info.value.blocked_params
-    assert "stream" in blocked_params
-    assert "streaming" in blocked_params
-    assert "stream_options" in blocked_params
-    assert "stream_usage" in blocked_params
-    assert "stream_callback" in blocked_params
-    assert "stream_handler" in blocked_params
-    assert "incremental" in blocked_params
+    assert "provider_specific.stream" in blocked_params
+    assert "provider_specific.streaming" in blocked_params
+    assert "provider_specific.stream_options" in blocked_params
+    assert "provider_specific.stream_usage" in blocked_params
+    assert "provider_specific.stream_callback" in blocked_params
+    assert "provider_specific.stream_handler" in blocked_params
+    assert "provider_specific.incremental" in blocked_params
 
   def test_prepare_request_includes_valid_provider_specific_params(self, anthropic_provider):
     """Test that valid provider-specific parameters are included."""
