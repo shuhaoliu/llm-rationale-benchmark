@@ -15,6 +15,11 @@ This project provides a command-line tool for testing different LLMs against hum
 - **Command-Line Interface**: Easy-to-use CLI for running benchmarks
 - **Extensible Architecture**: Built with future web interface and visualization in mind
 
+## Documentation Practices
+
+- Place all project documentation under `/doc`
+- Review the relevant documentation before starting work on any coding prompt or implementation task
+
 ## Installation
 
 ### Prerequisites
@@ -259,53 +264,11 @@ Options:
 
 ## Project Structure
 
-```
-rationale-benchmark/
-├── README.md
-├── requirements.txt
-├── setup.py
-├── config/
-│   ├── questionnaires/
-│   │   ├── moral-reasoning.yaml
-│   │   ├── cognitive-biases.yaml
-│   │   ├── decision-making.yaml
-│   │   └── social-psychology.yaml
-│   └── llms/
-│       ├── default-llms.yaml
-│       ├── research-models.yaml
-│       ├── production-models.yaml
-│       └── local-models.yaml
-├── rationale_benchmark/
-│   ├── __init__.py
-│   ├── cli.py
-│   ├── questionnaire/
-│   │   ├── __init__.py
-│   │   ├── loader.py
-│   │   └── validator.py
-│   ├── llm/
-│   │   ├── __init__.py
-│   │   ├── providers/
-│   │   └── client.py
-│   ├── benchmark/
-│   │   ├── __init__.py
-│   │   ├── runner.py
-│   │   └── evaluator.py
-│   └── utils/
-│       ├── __init__.py
-│       └── config.py
-├── tests/
-│   ├── __init__.py
-│   ├── test_questionnaire.py
-│   ├── test_llm.py
-│   └── test_benchmark.py
-└── examples/
-    ├── questionnaires/
-    │   ├── sample-moral-reasoning.yaml
-    │   └── sample-cognitive-biases.yaml
-    └── llms/
-        ├── sample-openai.yaml
-        └── sample-local.yaml
-```
+- `config/`: Houses LLM configuration files and questionnaire definitions consumed by the CLI.
+- `docs/`: Authoritative references for architecture, configuration workflows, and interface contracts.
+- `rationale_benchmark/`: Core implementation of the CLI and LLM interaction layers.
+- `tests/`: Pytest suite validating configuration loading, provider integrations, and concurrency helpers.
+- `AGENTS.md`, `README.md`, `pyproject.toml`, `uv.lock`: Contributor handbook, project overview, and uv dependency manifests.
 
 ## Development
 
