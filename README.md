@@ -53,6 +53,14 @@ uv sync --dev
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
+## Dev Container
+
+- Open the repository in VS Code (or another compatible client) and select "Reopen in Container" to start the configured environment.
+- The container image is built on top of the official devcontainers Python image, installs `uv`, and sets up Python 3.12 for development.
+- On first launch the container runs `uv sync --dev` so linting, type checking, and test tools are ready to use.
+- A persistent Docker volume caches `uv` downloads between container rebuilds for faster dependency installation.
+- Any `.env` file in the workspace is sourced automatically on container startup so environment variables are available in shells and tasks.
+
 ## Quick Start
 
 1. **Create questionnaires** in `config/questionnaires/` folder

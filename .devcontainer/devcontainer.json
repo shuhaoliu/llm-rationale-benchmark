@@ -1,0 +1,40 @@
+{
+  "name": "rationale-benchmark",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "VARIANT": "3.12",
+      "USERNAME": "vscode"
+    }
+  },
+  "postCreateCommand": "uv sync --dev",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/llm-rationale-benchmark/.venv/bin/python",
+        "python.testing.pytestArgs": [
+          "tests"
+        ],
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "editor.formatOnSave": true,
+        "python.formatting.provider": "none",
+        "ruff.importStrategy": "fromEnvironment"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+  "mounts": [
+    "source=uv-cache,target=/home/vscode/.cache/uv,type=volume"
+  ],
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": ".venv",
+    "DEVCONTAINER_WORKSPACE_DIR": "/workspaces/llm-rationale-benchmark"
+  }
+}
