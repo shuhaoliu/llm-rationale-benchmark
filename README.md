@@ -73,6 +73,15 @@ uv run rationale-benchmark --questionnaire cognitive-biases --llm-config researc
 uv run rationale-benchmark --questionnaires moral-reasoning,cognitive-biases
 ```
 
+## Environment Variables
+
+- Keep API keys and other secrets out of Git by reading them from environment variables rather than committing real values.
+- Copy `.env.example` to `.env` for local setup; populate only placeholders in `.env.example` and keep `.env` (already gitignored) machine-specific.
+- Document every required variable once in `.env.example` and again in `docs/configs.md` so onboarding and automation stay aligned.
+- Load `.env` values during local commands with `python-dotenv`, for example `uv run python -m dotenv run -- uv run pytest`, while the application continues to read from `os.environ`.
+- Configure CI/CD pipelines to inject the same variable names via the platform's secret manager (e.g., `OPENAI_API_KEY`) so configuration files behave consistently.
+- Ensure the configuration loader fails fast when a referenced `${ENV_VAR}` is missing or blank and cover the behavior with focused unit tests.
+
 ## Configuration
 
 The tool supports multiple questionnaire files and LLM configuration files organized in separate folders for better modularity and reusability.
