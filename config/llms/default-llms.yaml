@@ -9,7 +9,7 @@ defaults:
 
 providers:
   openai:
-    api_key: "${OPENAI_API_KEY}"
+    api_key: "${DASHSCOPE_API_KEY}"
     base_url: "https://api.openai.com/v1"
     models:
       - "gpt-4"
@@ -22,7 +22,7 @@ providers:
       - "qwen3-max"
 
   anthropic:
-    api_key: "${ANTHROPIC_API_KEY}"
+    api_key: "${DASHSCOPE_API_KEY}"
     base_url: "https://api.anthropic.com"
     models:
       - "claude-3-opus-20240229"
