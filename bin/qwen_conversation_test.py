@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import click
 
 from rationale_benchmark.llm.config.connector_models import ResponseFormat
-from rationale_benchmark.llm.conversation import LLMResponse
+from rationale_benchmark.llm.conversation import ConversationTurn, LLMResponse
 from rationale_benchmark.llm.conversation_factory import (
   LLMConversationFactory,
 )
@@ -94,18 +94,19 @@ def _normalise_selector(
 def _print_pair(
   index: int,
   question: str,
-  response: LLMResponse,
+  answer: str,
   *,
   show_metadata: bool,
+  metadata: dict[str, object] | None = None,
 ) -> None:
   """Pretty-print the question/answer pair as plain text."""
   click.echo(f"[{index}] Question:")
   click.echo(question)
   click.echo("Answer:")
-  answer = response.text.strip() or "(empty response)"
-  click.echo(answer)
-  if show_metadata and response.metadata:
-    encoded = json.dumps(response.metadata, ensure_ascii=False)
+  reply = answer.strip() or "(empty response)"
+  click.echo(reply)
+  if show_metadata and metadata:
+    encoded = json.dumps(metadata, ensure_ascii=False)
     click.echo(f"Metadata: {encoded}")
   click.echo("-" * 60)
 
@@ -120,6 +121,47 @@ def _resolve_questions(questions: Sequence[str]) -> Iterable[str]:
   if questions:
     return questions
   return DEFAULT_QUESTIONS
+
+
+def _conversation_pairs(
+  turns: Sequence[ConversationTurn],
+) -> list[tuple[ConversationTurn, ConversationTurn]]:
+  """Return ordered user/assistant pairs from archived turns."""
+  pairs: list[tuple[ConversationTurn, ConversationTurn]] = []
+  pending_user: ConversationTurn | None = None
+  for turn in turns:
+    if turn.role == "user":
+      if not turn.include_in_request:
+        continue
+      pending_user = turn
+      continue
+    if turn.role != "assistant":
+      continue
+    if pending_user is None:
+      continue
+    if not turn.include_in_request:
+      continue
+    pairs.append((pending_user, turn))
+    pending_user = None
+  return pairs
+
+
+def _print_transcript(
+  pairs: Sequence[tuple[ConversationTurn, ConversationTurn]],
+  *,
+  show_metadata: bool,
+  metadata_map: dict[int, dict[str, object]],
+) -> None:
+  """Emit the conversation pairs indexed in chronological order."""
+  for index, (user_turn, assistant_turn) in enumerate(pairs, start=1):
+    metadata = metadata_map.get(index)
+    _print_pair(
+      index,
+      user_turn.content,
+      assistant_turn.content,
+      show_metadata=show_metadata,
+      metadata=metadata,
+    )
 
 
 @click.command()
@@ -211,27 +253,12 @@ def main(
     conversation.config.response_format = desired_format
 
   prompts = list(_resolve_questions(questions))
-  results: list[dict[str, object]] = []
+  responses: list[LLMResponse] = []
 
   try:
     for index, prompt in enumerate(prompts, start=1):
       response = conversation.ask(prompt, max_attempts=max_attempts)
-      results.append(
-        {
-          "index": index,
-          "question": prompt,
-          "response_text": response.text,
-          "parsed": response.parsed,
-          "metadata": response.metadata,
-        }
-      )
-      if not json_output:
-        _print_pair(
-          index,
-          prompt,
-          response,
-          show_metadata=show_metadata,
-        )
+      responses.append(response)
   except KeyboardInterrupt:
     _emit_error("\nInterrupted by user.")
     sys.exit(130)
@@ -242,9 +269,35 @@ def main(
     _emit_error(f"Conversation failed: {exc}")
     sys.exit(2)
 
+  archive = conversation.archive()
+  pairs = _conversation_pairs(archive.turns)
+
+  record_list: list[dict[str, object]] = []
+  metadata_lookup: dict[int, dict[str, object]] = {}
+
+  for index, ((user_turn, assistant_turn), response) in enumerate(
+    zip(pairs, responses),
+    start=1,
+  ):
+    metadata_lookup[index] = response.metadata
+    record_list.append(
+      {
+        "index": index,
+        "question": user_turn.content,
+        "response_text": assistant_turn.content,
+        "parsed": response.parsed,
+        "metadata": response.metadata,
+      }
+    )
+
   if json_output:
-    click.echo(json.dumps(results, ensure_ascii=False, indent=2))
+    click.echo(json.dumps(record_list, ensure_ascii=False, indent=2))
   else:
+    _print_transcript(
+      pairs,
+      show_metadata=show_metadata,
+      metadata_map=metadata_lookup,
+    )
     click.echo("Conversation complete.")
 
 
