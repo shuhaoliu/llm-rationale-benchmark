@@ -1,1 +1,2 @@
-"""Test package for LLM module."""
+"""Test package for LLM connector components."""
+
