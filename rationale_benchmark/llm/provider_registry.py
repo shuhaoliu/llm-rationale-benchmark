@@ -7,6 +7,12 @@ from typing import Callable, Dict
 from .config.connector_models import LLMConnectorConfig, ProviderType
 from .exceptions import ConfigurationError
 from .provider_client import BaseProviderClient
+from .providers import (
+  AnthropicClient,
+  GeminiClient,
+  OpenAIChatClient,
+  OpenAICompatibleClient,
+)
 
 
 ProviderFactoryFn = Callable[[LLMConnectorConfig], BaseProviderClient]
@@ -15,8 +21,10 @@ ProviderFactoryFn = Callable[[LLMConnectorConfig], BaseProviderClient]
 class ProviderRegistry:
   """Maintain a registry of provider client factory functions."""
 
-  def __init__(self) -> None:
+  def __init__(self, *, register_builtin: bool = True) -> None:
     self._registry: Dict[ProviderType, ProviderFactoryFn] = {}
+    if register_builtin:
+      self._install_builtin()
 
   def register(
     self, provider_type: ProviderType, factory: ProviderFactoryFn
@@ -45,3 +53,8 @@ class ProviderRegistry:
 
     return dict(self._registry)
 
+  def _install_builtin(self) -> None:
+    self._registry[ProviderType.OPENAI] = OpenAIChatClient
+    self._registry[ProviderType.OPENAI_COMPATIBLE] = OpenAICompatibleClient
+    self._registry[ProviderType.ANTHROPIC] = AnthropicClient
+    self._registry[ProviderType.GEMINI] = GeminiClient

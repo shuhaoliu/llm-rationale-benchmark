@@ -29,7 +29,7 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
 ## Core Components
 
 ### Configuration Model
-- Configuration files declare multiple named entries under `models`, each keyed by `"{provider}/{model_id}"` and expanding to an `LLMConnectorConfig`. Shared defaults (e.g., retry policy) can live at the document root and are merged into each entry unless overridden.
+- Configuration files declare shared values under `defaults` and provider-specific maps under `providers`. Each provider lists one or more entries in `models`, producing fully-qualified selectors of the form `"{provider}/{model_id}"`. Shared defaults (retry policy, response format, etc.) merge into every model unless overridden at the provider or per-model level.
 - `LLMConnectorConfig` (pydantic model) captures:
   - `provider`: enum (`openai`, `openai_compatible`, `anthropic`, `gemini`).
   - `endpoint`, `api_key`, `model`, `timeout_seconds`, `retry` (max attempts, backoff).
@@ -70,7 +70,7 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
 - Common behaviors:
   - Normalize messages to provider-specific structure (OpenAI chat, Anthropic Claude messages, Gemini content parts).
   - Translate standardized parameters (`temperature`, `top_p`, `max_tokens`).
-  - Respect timeout via aiohttp session with per-request deadlines.
+  - Respect timeout via the synchronous HTTP transport with per-request deadlines.
   - Auto-detect when a reasoning-capable model requires streaming, switching to streaming APIs and assembling a buffered response so downstream consumers can keep the non-streaming contract.
   - Surface `RateLimitError`, `AuthenticationError`, `ProviderError`.
 - Provider-specific notes:

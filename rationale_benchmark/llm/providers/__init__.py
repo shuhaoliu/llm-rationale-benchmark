@@ -1,16 +1,13 @@
-"""LLM provider implementations."""
+"""Built-in provider client implementations."""
 
-# Provider implementations will be imported here when created
-from .base import LLMProvider
-from .openai import OpenAIProvider
-from .anthropic import AnthropicProvider
-from .gemini import GeminiProvider
-# from .openrouter import OpenRouterProvider
+from .anthropic import AnthropicClient
+from .gemini import GeminiClient
+from .openai import OpenAIChatClient
+from .openai_compatible import OpenAICompatibleClient
 
 __all__ = [
-    "LLMProvider",
-    "OpenAIProvider",
-    "AnthropicProvider",
-    "GeminiProvider",
-    # "OpenRouterProvider",
+  "AnthropicClient",
+  "GeminiClient",
+  "OpenAIChatClient",
+  "OpenAICompatibleClient",
 ]

@@ -38,7 +38,7 @@ providers:
 ```
 
 - `defaults` declares reusable baseline values applied to every provider unless explicitly overridden.
-- `providers` contains named maps of provider identifiers (e.g., `openai`, `anthropic`, `gemini`, `openrouter`) to their configuration.
+- `providers` contains named maps of provider identifiers (e.g., `openai`, `anthropic`, `gemini`, `openrouter_openai_compatible`) to their configuration.
 - Use `${ENV_VAR}` placeholders wherever the value varies per deployment or contains secrets; the loader resolves them at runtime.
 
 ## Defaults Section
@@ -58,18 +58,20 @@ Each provider entry **must** define the following:
 
 Optional fields:
 - `endpoint`: Full URL for providers requiring explicit endpoint configuration.
-- `base_url`: For OpenAI-compatible services (e.g., OpenRouter). Mutually exclusive with `endpoint`; use whichever the adapter expects.
+- `base_url`: For OpenAI-compatible services (e.g., OpenRouter via `openrouter_openai_compatible`). Mutually exclusive with `endpoint`; use whichever the adapter expects.
 - `timeout`: Provider-specific override of the default timeout.
 - `max_retries`: Provider-specific retry override.
 - `default_params`: Map of request parameters applied to every call. Use for `temperature`, `max_tokens`, `top_p`, `stop_sequences`, etc. These values override anything inherited from `defaults`.
 - `provider_specific`: Adapter-specific settings (e.g., Anthropic `version`, Gemini `safety_settings`, custom headers). Streaming parameters (`stream`, `streaming`, `stream_options`) are forbidden and raise validation errors.
 - `metadata`: Optional free-form dictionary stored with archives for reporting.
 
+OpenAI-compatible providers (anything that speaks the OpenAI REST shape but is not the first-party OpenAI service) must use the key pattern `{provider}_openai_compatible`. The suffix ensures the loader routes requests through the OpenAI-compatible client while still allowing multiple providers (e.g., `openrouter_openai_compatible`, `azure_openai_compatible`) to coexist.
+
 ### Supported Provider Keys
 | Provider key      | Description                                                |
 |-------------------|------------------------------------------------------------|
 | `openai`          | Official OpenAI endpoint (`https://api.openai.com/v1`).    |
-| `openai_compatible` / `openrouter` | OpenAI-compatible APIs with custom `base_url`. |
+| `{provider}_openai_compatible` | OpenAI-compatible APIs that reuse the OpenAI client (e.g., `openrouter_openai_compatible`, `azure_openai_compatible`). |
 | `anthropic`       | Claude family models via `https://api.anthropic.com`.      |
 | `gemini`          | Google Gemini models; requires `endpoint` and `api_key`.   |
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from .client import LLMClient
 from .config.connector_loader import ConnectorConfigLoader
 from .config.connector_models import LLMConnectorConfig, ProviderType, ResponseFormat
 from .conversation import LLMConversation, LLMConversationArchive, LLMResponse
@@ -34,7 +33,6 @@ __all__ = [
   "ConnectorConfigLoader",
   "ConversationArchivedError",
   "ConversationHistoryError",
-  "LLMClient",
   "LLMConnectorConfig",
   "LLMConversation",
   "LLMConversationArchive",
@@ -56,4 +54,3 @@ __all__ = [
   "TimeoutError",
   "ValidationFailedError",
 ]
-

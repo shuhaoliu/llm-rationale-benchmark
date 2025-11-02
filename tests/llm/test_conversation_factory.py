@@ -37,9 +37,11 @@ def register_echo_provider(registry: ProviderRegistry) -> None:
 def write_config(tmp_path: Path) -> Path:
   contents = textwrap.dedent(
     """
-    models:
-      openai/gpt-sim:
+    providers:
+      openai:
         api_key: token
+        models:
+          - gpt-sim
     """
   )
   path = tmp_path / "llms.yaml"
@@ -48,7 +50,7 @@ def write_config(tmp_path: Path) -> Path:
 
 
 def test_factory_creates_conversation_and_reuses_client(tmp_path):
-  registry = ProviderRegistry()
+  registry = ProviderRegistry(register_builtin=False)
   register_echo_provider(registry)
   factory = LLMConversationFactory(registry=registry)
 
@@ -72,7 +74,7 @@ def test_factory_creates_conversation_and_reuses_client(tmp_path):
 
 
 def test_factory_raises_for_unknown_model(tmp_path):
-  registry = ProviderRegistry()
+  registry = ProviderRegistry(register_builtin=False)
   register_echo_provider(registry)
   factory = LLMConversationFactory(registry=registry)
 
@@ -80,4 +82,3 @@ def test_factory_raises_for_unknown_model(tmp_path):
 
   with pytest.raises(ConfigurationError):
     factory.create_from_config(config_path, "openai/unknown")
-

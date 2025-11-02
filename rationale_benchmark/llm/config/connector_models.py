@@ -69,6 +69,7 @@ class LLMConnectorConfig(BaseModel):
   metadata: Dict[str, Any] = Field(default_factory=dict)
   provider_specific: Dict[str, Any] = Field(default_factory=dict)
   requires_streaming: bool = False
+  default_params: Dict[str, Any] = Field(default_factory=dict)
 
   @field_validator("model")
   @classmethod
@@ -134,4 +135,3 @@ def format_validation_error(error: ValidationError) -> str:
     location = ".".join(str(part) for part in issue.get("loc", []))
     details.append(f"{location or '<root>'}: {issue.get('msg')}")
   return "\n".join(details)
-
