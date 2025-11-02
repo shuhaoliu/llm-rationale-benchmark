@@ -1,37 +1,59 @@
-"""LLM connector module for unified interface to multiple LLM providers."""
+"""Public exports for the LLM connector package."""
+
+from __future__ import annotations
 
 from .client import LLMClient
+from .config.connector_loader import ConnectorConfigLoader
+from .config.connector_models import LLMConnectorConfig, ProviderType, ResponseFormat
+from .conversation import LLMConversation, LLMConversationArchive, LLMResponse
+from .conversation_factory import LLMConversationFactory
 from .exceptions import (
-    ConfigurationError,
-    ConversationHistoryError,
-    LLMConnectorError,
-    LLMError,
-    ProviderError,
-    ResponseValidationError,
-    StreamingNotSupportedError,
+  AuthenticationError,
+  ConfigurationError,
+  ConversationArchivedError,
+  ConversationHistoryError,
+  LLMConnectorError,
+  LLMError,
+  ModelNotFoundError,
+  ProviderError,
+  RateLimitError,
+  ResponseValidationError,
+  RetryExhaustedError,
+  RetryableProviderError,
+  StreamingNotSupportedError,
+  TimeoutError,
+  ValidationFailedError,
 )
-from .factory import ProviderFactory
-from .models import (
-    LLMConfig,
-    ModelRequest,
-    ModelResponse,
-    ProviderConfig,
-)
-from .providers import LLMProvider
+from .provider_client import BaseProviderClient, ProviderResponse, StaticResponseProvider
+from .provider_registry import ProviderRegistry
 
 __all__ = [
-    "LLMClient",
-    "LLMError",
-    "LLMConnectorError",
-    "ConfigurationError",
-    "ConversationHistoryError",
-    "ProviderError",
-    "ResponseValidationError",
-    "StreamingNotSupportedError",
-    "ProviderConfig",
-    "LLMConfig",
-    "ModelRequest",
-    "ModelResponse",
-    "LLMProvider",
-    "ProviderFactory",
+  "AuthenticationError",
+  "BaseProviderClient",
+  "ConfigurationError",
+  "ConnectorConfigLoader",
+  "ConversationArchivedError",
+  "ConversationHistoryError",
+  "LLMClient",
+  "LLMConnectorConfig",
+  "LLMConversation",
+  "LLMConversationArchive",
+  "LLMConversationFactory",
+  "LLMError",
+  "LLMResponse",
+  "ModelNotFoundError",
+  "ProviderError",
+  "ProviderRegistry",
+  "ProviderResponse",
+  "ProviderType",
+  "RateLimitError",
+  "ResponseValidationError",
+  "ResponseFormat",
+  "RetryExhaustedError",
+  "RetryableProviderError",
+  "StaticResponseProvider",
+  "StreamingNotSupportedError",
+  "TimeoutError",
+  "ValidationFailedError",
 ]
+
