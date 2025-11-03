@@ -124,17 +124,33 @@ questionnaire:
     - name: "Trolley Problems"
       questions:
         - id: "moral_001"
-          type: "scenario"
+          type: "rating-5"
           prompt: "A runaway trolley is heading towards five people..."
-          expected_reasoning: "utilitarian vs deontological"
+          scoring:
+            total: 5
+            weights: [1, 2, 3, 4, 5]
+        - id: "moral_002"
+          type: "rating-7"
+          prompt: "A runaway trolley is heading towards seven people..."
+          scoring:
+            total: 7
+            weights: [1, 2, 3, 4, 5, 6, 7]
           
     - name: "Justice Scenarios"
       questions:
         - id: "moral_002"
           type: "choice"
           prompt: "In a resource allocation scenario..."
-          options: ["Equal distribution", "Merit-based", "Need-based"]
-          bias_type: "fairness_bias"
+          options:
+            A: "Equal distribution"
+            B: "Merit-based"
+            C: "Need-based"
+          scoring: 
+            total: 10
+            weights:
+              A: 10
+              B: 5
+              C: 1
 ```
 
 ```yaml
@@ -149,8 +165,14 @@ questionnaire:
         - id: "bias_001"
           type: "choice"
           prompt: "Which cause of death is more common?"
-          options: ["Shark attacks", "Dog bites"]
-          bias_type: "availability_heuristic"
+          options:
+            shark: "Shark attacks"
+            dog: "Dog bites"
+          scoring:
+            total: 2
+            weights:
+              shark: 0
+              dog: 2
 ```
 
 ### LLM Provider Configuration
