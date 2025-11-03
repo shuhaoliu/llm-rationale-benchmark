@@ -1,126 +1,193 @@
 # Project Architecture Guidelines
 
-## Project Overview
-This rationale benchmark tool evaluates LLMs against human-like reasoning patterns. The architecture follows a modular design with a clear separation of concerns, enabling each component to evolve independently while remaining cohesive as a system.
+## Overview
+The rationale benchmark coordinates questionnaire-driven evaluations across
+multiple LLM providers. The system is intentionally modular so questionnaire
+authors, connector engineers, and CLI users can iterate independently while
+sharing consistent validation, scoring, and result formats. Architecture
+decisions prioritize:
+- Configuration-driven behavior (YAML + environment variables) over code edits.
+- Deterministic validation and scoring before any network traffic.
+- Clear seams for new LLM providers and questionnaire formats.
 
-## Core Modules
+Refer to `docs/01-llm/design.md` and `docs/02-questionnaire/design.md` for
+deep-dive guidance on the connector and questionnaire subsystems that underpin
+this document.
 
-### CLI Module (`cli.py`)
-- Entry point for the command-line interface
-- Handles argument parsing and validation for multiple questionnaires and LLM configs
-- Supports listing available questionnaires and LLM configurations
-- Coordinates between questionnaire loading, LLM clients, and benchmark execution
-- Uses the Click framework for CLI implementation
-- Supports running single or multiple questionnaires
-- Handles configuration directory discovery and validation
+## Execution Flow
+1. **CLI startup (`cli.py`)** discovers configuration directories, resolves the
+   requested questionnaire IDs and LLM configuration name, and validates command
+   arguments.
+2. **Configuration loading** merges `config/llms/default-llms.yaml` with any
+   overrides, resolves `${ENV_VAR}` references, and validates every declared
+   `provider/model` selector.
+3. **Questionnaire loading** parses YAML files from
+   `config/questionnaires/`, runs schema + semantic validation, and constructs
+   domain models (`Questionnaire`, `Section`, `Question`, `ScoringRule`).
+4. **Conversation assembly** uses `LLMConversationFactory` to create
+   `LLMConversation` instances for each requested `provider/model`, wiring the
+   appropriate provider adapter and retry policy.
+5. **Benchmark execution** iterates loaded questionnaires, prompts each model,
+   applies answer validators, and aggregates scores and free-form responses.
+6. **Result emission** writes JSON reports, logs structured telemetry, and
+   surfaces CLI summaries.
 
-### Questionnaire Module (`questionnaire/`)
-- `loader.py`: YAML questionnaire parsing and loading from multiple files
-- `validator.py`: Questionnaire structure validation
-- Supports loading questionnaires by filename (without extension)
-- Supports loading multiple questionnaires in a single execution
-- Supports nested sections and multiple question types
-- Validates required fields and data types
-- Discovers and lists available questionnaire files
+## Core Components
 
-### LLM Module (`llm/`)
-- `client.py`: Abstract LLM client interface
-- `providers/`: Provider-specific implementations (OpenAI, Anthropic, local)
-- Handles API authentication and rate limiting
-- Standardizes response formats across providers
+### CLI & Orchestration (`cli.py`, `runner/executor.py`)
+- Click-based interface exposes commands for listing questionnaires, previewing
+  available LLM configurations, and running benchmarks.
+- Accepts comma-delimited questionnaire IDs (`--questionnaires`) and an LLM
+  configuration name (`--llm-config`).
+- Delegates to configuration loaders and questionnaire loaders, then instantiates
+  the benchmark runner with validated inputs.
+- Handles exit codes and graceful interruption (Ctrl+C) to ensure partially
+  collected results are persisted.
 
-### Benchmark Module (`benchmark/`)
-- `runner.py`: Executes benchmarks across multiple models
-- `evaluator.py`: Analyzes and scores LLM responses
-- Supports parallel execution when possible
-- Generates structured results
+### Configuration Layer (`llm/config_loader.py`, `config/llms/`)
+- Consumes YAML files documented in `docs/01-llm/configs.md`.
+- Always loads `default-llms.yaml` first; additional files overlay provider and
+  default definitions following the merge rules described in the LLM configs
+  spec (scalar replacement, dictionary merge, list replacement for `models`).
+- Resolves environment variables at load time, raising `ConfigurationError` for
+  unresolved secrets or unsupported provider keys.
+- Produces a validated mapping of `LLMConnectorConfig` objects keyed by
+  `provider/model` so downstream consumers avoid string parsing.
+
+### LLM Connector Layer (`llm/conversation.py`, `llm/factory.py`, `llm/providers/`)
+- Governed by `docs/01-llm/design.md`.
+- `LLMConversationFactory` instantiates `LLMConversation` objects from validated
+  config entries, applying CLI-supplied system prompts or falling back to
+  configuration defaults.
+- `LLMConversation` maintains transcript history, retry orchestration, optional
+  response validators, and archive semantics to prevent reuse after finalization.
+- Provider adapters implement a `BaseProviderClient` contract for OpenAI,
+  OpenAI-compatible, Anthropic, Gemini, and future providers. Adapters own
+  payload construction, structured output hints, and response parsing.
+- Connection reuse and optional client caching minimize redundant HTTP session
+  creation during benchmark runs.
+
+### Questionnaire Module (`questionnaire/loader.py`, `questionnaire/validator.py`)
+- Detailed in `docs/02-questionnaire/design.md`.
+- Discovers YAML questionnaire files, preventing directory traversal and
+  enforcing `.yaml` suffixes.
+- Validation pipeline performs schema checks, semantic validation (unique IDs,
+  scoring constraints, type-specific rules), and surfaces precise error
+  locations via `QuestionnaireConfigError`.
+- Domain models normalize rating weight lists into dictionary form to unify
+  scoring logic across question types.
+- Exposes helpers for listing questionnaires, loading one or many, and running
+  standalone validation via `bin/validate_questionnaire.py`.
+
+### Benchmark Runner (`runner/executor.py`)
+- Coordinates questionnaire iteration and LLM conversations.
+- For each question:
+  - Builds prompts using questionnaire metadata and question definitions.
+  - Invokes `LLMConversation.ask()` to obtain responses with retries/backoff.
+  - Applies answer validators; failed attempts log retry context and may trigger
+    automatic re-prompts when validators indicate recoverable errors.
+- Collects structured responses and timing metadata for downstream reports.
+- Handles per-model failure isolation so other models continue running even when
+  one provider becomes unavailable.
+
+### Scoring & Evaluation (`runner/evaluator.py`)
+- Accepts `Questionnaire` objects and raw LLM responses, invoking question-type
+  validators before scoring.
+- Produces `QuestionScore` aggregates per section and questionnaire, ensuring
+  the awarded points never exceed configured totals.
+- Computes higher-level metrics (average scores by questionnaire/model, reasoned
+  alignment metrics) and feeds them into result serialization.
+
+### Support Utilities
+- `bin/validate_questionnaire.py`: CLI helper validating questionnaire files,
+  shared with automation pipelines.
+- Shared logging utilities configure structured JSON logs (via `structlog`)
+  across CLI, loaders, and benchmark execution.
+
+## Data Flow & Outputs
+- **Transcripts**: `LLMConversation.archive()` produces immutable snapshots used
+  for post-hoc analysis and debugging.
+- **Benchmark JSON Report** (written to disk/stdout as configured):
+  ```json
+  {
+    "benchmark_info": {
+      "questionnaires": ["string"],
+      "llm_config": "string",
+      "execution_timestamp": "ISO8601",
+      "models_tested": ["provider/model"]
+    },
+    "results": [
+      {
+        "questionnaire": "string",
+        "model": "provider/model",
+        "question_id": "string",
+        "response": "string",
+        "reasoning": "string",
+        "awarded_score": "float",
+        "total_score": "float",
+        "latency_ms": "int"
+      }
+    ],
+    "summary": {
+      "questionnaires_run": "int",
+      "total_questions": "int",
+      "models_tested": "int",
+      "average_scores_by_questionnaire": {},
+      "average_scores_by_model": {},
+      "cost_estimates": {}
+    }
+  }
+  ```
+- **Logging**: Structured JSON logs capture provider, model, latency, retry
+  attempts, and validation outcomes at INFO level. DEBUG traces optionally
+  include sanitized request/response snippets.
 
 ## Error Handling Strategy
-
 ### Configuration Errors
-- Validate YAML structure on load
-- Provide clear error messages for missing fields
-- Fail fast with descriptive error messages
+- Invalid YAML, unresolved environment variables, unsupported providers, or
+  schema violations raise `ConfigurationError` before runtime.
+- Questionnaire validation failures raise `QuestionnaireConfigError` with file
+  path and contextual pointer.
 
-### API Errors
-- Implement retry logic with exponential backoff
-- Handle rate limiting gracefully
-- Log API errors with context
+### Provider & Network Errors
+- Provider adapters categorize errors (authentication, rate limit, network,
+  model errors) and feed them into retry policies defined by configuration.
+- Exponential backoff with jitter prevents synchronized retries; max attempts
+  are configurable per provider or via defaults.
+- Exhausted retries surface user-friendly CLI errors while allowing other
+  models to continue.
 
 ### Benchmark Execution Errors
-- Continue execution if a single model fails
-- Collect and report all errors at the end
-- Provide partial results when possible
+- Conversation-level failures archive partial transcripts for inspection.
+- Runner aggregates encountered errors and reports them at the end of
+  execution, while still streaming partial results where safe.
 
-## Output and Results
+## Observability & Performance
+- Rate limiting handled via semaphores or token buckets per provider to respect
+  RPM/TPM quotas.
+- Optional metrics hooks capture latency distributions, validator failure rates,
+  and retry counts (see `docs/01-llm/design.md`).
+- Large result sets stream to disk to control memory usage; prompts and
+  responses are not eagerly duplicated.
+- Async provider adapters share HTTP sessions and enforce `max_concurrent`
+  limits derived from configuration.
 
-### JSON Output Format
-```json
-{
-  "benchmark_info": {
-    "questionnaires": ["string"],
-    "llm_config": "string",
-    "execution_timestamp": "ISO8601",
-    "models_tested": ["string"]
-  },
-  "results": [
-    {
-      "questionnaire": "string",
-      "model": "string",
-      "question_id": "string",
-      "response": "string",
-      "evaluation_score": "float",
-      "reasoning_alignment": "float"
-    }
-  ],
-  "summary": {
-    "questionnaires_run": "int",
-    "total_questions": "int",
-    "models_tested": "int",
-    "average_scores_by_questionnaire": {},
-    "average_scores_by_model": {}
-  }
-}
-```
+## Extensibility
+- **LLM Providers**: Add new adapters under `llm/providers/` by implementing the
+  base client contract; register provider keys in the config loader.
+- **Question Types**: Extend `QuestionType` registry with validation/scoring
+  hooks and document in `docs/02-questionnaire/design.md`.
+- **Scoring**: Introduce new aggregation strategies by extending the evaluator
+  while preserving `QuestionScore` inputs.
+- **Surface Areas**: The CLI keeps business logic in loaders/runners so additional
+  interfaces (REST API, web UI) can reuse the same orchestration pipeline.
 
-### Logging
-- Use structured logging with JSON format
-- Log levels: DEBUG, INFO, WARNING, ERROR
-- Include execution context in log messages
-- Separate log files for different components
-
-## Future Extensibility
-
-### Web Interface Preparation
-- Keep business logic separate from the CLI
-- Design APIs that can be exposed via REST
-- Use dependency injection for easier testing
-
-### Plugin Architecture
-- Design the provider interface for easy extension
-- Support custom evaluators
-- Allow custom question types
-
-## Performance Considerations
-
-### Async Operations
-- Use asyncio for concurrent LLM API calls
-- Implement connection pooling for HTTP clients
-- Handle rate limiting across concurrent requests
-
-### Memory Management
-- Stream large result sets when possible
-- Implement pagination for large questionnaires
-- Clean up resources properly
-
-## Security Guidelines
-
-### API Key Management
-- Never log API keys
-- Use environment variables only
-- Validate API key format before use
-
-### Input Validation
-- Sanitize all user inputs
-- Validate file paths and prevent directory traversal
-- Limit file sizes for uploaded questionnaires
+## Reference Documents
+- `docs/01-llm/design.md`: Connector architecture, conversation lifecycle,
+  provider adapter contracts.
+- `docs/01-llm/configs.md`: Detailed LLM configuration schema, merge rules, and
+  validation expectations.
+- `docs/02-questionnaire/design.md`: Questionnaire schema, validation pipeline,
+  scoring model, and extensibility hooks.
+- `docs/02-questionnaire/guide.md`: Author-facing instructions for crafting
+  questionnaires that pass validation and integrate with the benchmark.
