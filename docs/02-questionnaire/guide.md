@@ -19,6 +19,8 @@ questionnaire:
   name: "Burnout Inventory"
   description: "Measuring perceived burnout in knowledge workers."
   version: 1
+  system_prompt: |
+    You are a neutral assistant administering the burnout inventory.
   metadata:
     author: "Psych Lab"
     published: "2024-06-01"
@@ -29,11 +31,17 @@ questionnaire:
 - `id`: slug-style identifier (lowercase letters, digits, hyphen).
 - `name`: human-readable title used in CLI listings.
 - `sections`: non-empty list once populated.
+- `system_prompt`: instructions sent as the system message to every LLM run.
 
 ### Optional Fields
 - `description`: free-form summary.
 - `version`: increment when schema changes (e.g., add/remove questions).
 - `metadata`: arbitrary key/value strings for provenance and IRB info.
+
+### Define the System Prompt
+- Keep prompts concise but explicit about tone, safety guidance, and answer format.
+- Use YAML block scalars (`|`) for multi-line prompts so line breaks are preserved.
+- Treat the prompt as required protocol wording shared by all models.
 
 ## 3. Add Sections
 Sections group related questions and appear sequentially in the CLI UI.
@@ -151,3 +159,4 @@ Ensure section ordering reflects the experience you intend for participants.
 - [ ] `bin/validate_questionnaire.py` passes for the new or modified files.
 - [ ] YAML lint passes (`uv run yamllint config/questionnaires/burnout-survey.yaml`).
 - [ ] README snippets remain accurate if examples were edited.
+- [ ] A clear `system_prompt` is defined and reviewed for experiment safety.

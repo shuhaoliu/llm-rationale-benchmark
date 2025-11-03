@@ -48,6 +48,7 @@ class Questionnaire:
   description: str | None
   version: int | None
   metadata: dict[str, str]
+  system_prompt: str
   sections: list[Section]
 
 

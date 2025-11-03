@@ -133,6 +133,7 @@ def _build_questionnaire(
     description=schema.description,
     version=schema.version,
     metadata=metadata,
+    system_prompt=schema.system_prompt,
     sections=sections,
   )
 

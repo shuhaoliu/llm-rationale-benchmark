@@ -20,6 +20,7 @@ class Section:
 class Questionnaire:
   name: str
   description: str
+  system_prompt: str
   sections: list[Section]
 ```
 

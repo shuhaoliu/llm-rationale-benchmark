@@ -3,6 +3,9 @@ questionnaire:
   name: "Risk Propencity Example"
   description: "Seven-point Likert items capturing attitudes toward risk and time orientation."
   version: 1
+  system_prompt: |
+    You are an impartial research assistant administering a risk propensity survey.
+    Present each question exactly as written and avoid adding commentary.
   metadata:
     author: "Benchmark Curation Team"
     source: "Adapted from provided reference image for risk propensity prompt."

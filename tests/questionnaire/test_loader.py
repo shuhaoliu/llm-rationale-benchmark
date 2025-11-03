@@ -35,6 +35,7 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
       name: "Burnout Survey"
       description: "A test questionnaire"
       version: 1
+      system_prompt: "You are a careful assistant helping with burnout surveys."
       metadata:
         author: "Psych Lab"
       sections:
@@ -63,6 +64,10 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
   questionnaire = load_questionnaire("burnout", questionnaire_dir.parent)
   assert questionnaire.id == "burnout"
   assert questionnaire.metadata == {"author": "Psych Lab"}
+  assert (
+    questionnaire.system_prompt
+    == "You are a careful assistant helping with burnout surveys."
+  )
   assert len(questionnaire.sections) == 1
   section = questionnaire.sections[0]
   assert section.name == "Workload"
@@ -79,6 +84,30 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
   assert choice.options == {"low": "Manageable", "high": "Overwhelming"}
 
 
+def test_missing_system_prompt_raises(questionnaire_dir: Path) -> None:
+  _write_yaml(
+    questionnaire_dir,
+    "no-system",
+    """
+    questionnaire:
+      id: "no-system"
+      name: "No System Prompt"
+      sections:
+        - name: "Only"
+          questions:
+            - id: "q1"
+              type: "rating-5"
+              prompt: "Prompt"
+              scoring:
+                total: 5
+                weights: [0, 1, 2, 3, 4]
+    """,
+  )
+  with pytest.raises(QuestionnaireConfigError) as error:
+    load_questionnaire("no-system", questionnaire_dir.parent)
+  assert error.value.location == "questionnaire.system_prompt"
+
+
 def test_duplicate_question_id_raises(questionnaire_dir: Path) -> None:
   _write_yaml(
     questionnaire_dir,
@@ -87,6 +116,7 @@ def test_duplicate_question_id_raises(questionnaire_dir: Path) -> None:
     questionnaire:
       id: "dup-question"
       name: "Dup"
+      system_prompt: "You default to structured survey guidance."
       sections:
         - name: "Workload"
           questions:
@@ -122,6 +152,7 @@ def test_choice_weights_mismatch_raises(questionnaire_dir: Path) -> None:
     questionnaire:
       id: "bad-choice"
       name: "Bad"
+      system_prompt: "Provide structured answers."
       sections:
         - name: "Workload"
           questions:
@@ -150,6 +181,7 @@ def test_list_questionnaires_returns_file_stems(questionnaire_dir: Path) -> None
     questionnaire:
       id: "first"
       name: "First"
+      system_prompt: "Stay neutral."
       sections:
         - name: "Only"
           questions:
@@ -168,6 +200,7 @@ def test_list_questionnaires_returns_file_stems(questionnaire_dir: Path) -> None
     questionnaire:
       id: "second"
       name: "Second"
+      system_prompt: "Stay neutral."
       sections:
         - name: "Only"
           questions:

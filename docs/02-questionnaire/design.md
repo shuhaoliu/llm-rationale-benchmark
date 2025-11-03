@@ -20,6 +20,8 @@ questionnaire:
   name: "Burnout Inventory"     # human readable title (required)
   description: "..."            # optional, shown in CLI help
   version: 1                    # integer incremented on schema changes
+  system_prompt: |              # required system prompt passed to LLMs
+    You are a neutral assistant administering the burnout inventory.
   metadata:                     # optional, arbitrary string key/value pairs
     author: "Psych Lab"
     published: "2024-06-01"
@@ -53,6 +55,11 @@ questionnaire:
 - `name`: unique within the questionnaire.
 - `instructions`: optional text surfaced in the UI/CLI before the section.
 - `questions`: non-empty list of question declarations.
+
+#### System Prompt Requirements
+- `system_prompt` must be a non-empty string.
+- The prompt seeds every LLM conversation initiated for the questionnaire.
+- Multi-line prompts are allowed using YAML block scalars.
 
 #### Question Requirements
 - `id`: unique across whole questionnaire (namespaced by section in practice).
@@ -129,6 +136,7 @@ class Questionnaire:
   description: str | None
   version: int | None
   metadata: dict[str, str]
+  system_prompt: str
   sections: list[Section]
 ```
 

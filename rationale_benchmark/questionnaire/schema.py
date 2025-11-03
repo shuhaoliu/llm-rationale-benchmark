@@ -34,6 +34,7 @@ class QuestionnaireSchema(BaseModel):
   description: str | None = None
   version: int | None = None
   metadata: dict[str, str] | None = Field(default=None)
+  system_prompt: str = Field(..., min_length=1)
   sections: list[SectionSchema] = Field(..., min_length=1)
 
   model_config = ConfigDict(extra="forbid")
