@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ScoringSchema(BaseModel):
+  total: int
+  weights: list[int] | dict[str, int]
+
+  model_config = ConfigDict(extra="forbid")
+
+
+class QuestionSchema(BaseModel):
+  id: str
+  type: str
+  prompt: str
+  options: dict[str, str] | None = None
+  scoring: ScoringSchema
+
+  model_config = ConfigDict(extra="forbid")
+
+
+class SectionSchema(BaseModel):
+  name: str
+  instructions: str | None = None
+  questions: list[QuestionSchema] = Field(..., min_length=1)
+
+  model_config = ConfigDict(extra="forbid")
+
+
+class QuestionnaireSchema(BaseModel):
+  id: str
+  name: str
+  description: str | None = None
+  version: int | None = None
+  metadata: dict[str, str] | None = Field(default=None)
+  sections: list[SectionSchema] = Field(..., min_length=1)
+
+  model_config = ConfigDict(extra="forbid")
+
+
+class QuestionnaireFileSchema(BaseModel):
+  questionnaire: QuestionnaireSchema
+
+  model_config = ConfigDict(extra="forbid")

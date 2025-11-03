@@ -1,0 +1,47 @@
+questionnaire:
+  id: "risk_propencity_example"
+  name: "Risk Propencity Example"
+  description: "Seven-point Likert items capturing attitudes toward risk and time orientation."
+  version: 1
+  metadata:
+    author: "Benchmark Curation Team"
+    source: "Adapted from provided reference image for risk propensity prompt."
+    scale: "1=Strongly disagree, 2=Disagree, 3=Somewhat disagree, 4=Neutral, 5=Somewhat agree, 6=Agree, 7=Strongly agree"
+    notes: "Items risk_propencity_01 and risk_propencity_04 are reverse scored to keep higher totals aligned with greater risk propensity."
+  sections:
+    - name: "Risk Orientation"
+      instructions: >
+        Please use the following 7-point scale to rate how much you agree or disagree with
+        each statement. Select a number from 1 (Strongly disagree) to 7 (Strongly agree) that
+        best represents your view.
+      questions:
+        - id: "risk_propencity_01"
+          type: "rating-7"
+          prompt: "Plan as if you will live forever."
+          scoring:
+            total: 7
+            weights: [7, 6, 5, 4, 3, 2, 1]
+        - id: "risk_propencity_02"
+          type: "rating-7"
+          prompt: "Live as if you will die today."
+          scoring:
+            total: 7
+            weights: [1, 2, 3, 4, 5, 6, 7]
+        - id: "risk_propencity_03"
+          type: "rating-7"
+          prompt: "Life is short; enjoy it while it lasts."
+          scoring:
+            total: 7
+            weights: [1, 2, 3, 4, 5, 6, 7]
+        - id: "risk_propencity_04"
+          type: "rating-7"
+          prompt: "It is wise to prepare for the future and a long, full life."
+          scoring:
+            total: 7
+            weights: [7, 6, 5, 4, 3, 2, 1]
+        - id: "risk_propencity_05"
+          type: "rating-7"
+          prompt: "I often think of things related to my death and death itself."
+          scoring:
+            total: 7
+            weights: [1, 2, 3, 4, 5, 6, 7]
