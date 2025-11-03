@@ -79,24 +79,22 @@ this document.
 - Exposes helpers for listing questionnaires, loading one or many, and running
   standalone validation via `bin/validate_questionnaire.py`.
 
-### Benchmark Runner (`runner/executor.py`)
-- Coordinates questionnaire iteration and LLM conversations.
-- For each question:
-  - Builds prompts using questionnaire metadata and question definitions.
-  - Invokes `LLMConversation.ask()` to obtain responses with retries/backoff.
-  - Applies answer validators; failed attempts log retry context and may trigger
-    automatic re-prompts when validators indicate recoverable errors.
-- Collects structured responses and timing metadata for downstream reports.
-- Handles per-model failure isolation so other models continue running even when
-  one provider becomes unavailable.
-
-### Scoring & Evaluation (`runner/evaluator.py`)
-- Accepts `Questionnaire` objects and raw LLM responses, invoking question-type
-  validators before scoring.
-- Produces `QuestionScore` aggregates per section and questionnaire, ensuring
-  the awarded points never exceed configured totals.
-- Computes higher-level metrics (average scores by questionnaire/model, reasoned
-  alignment metrics) and feeds them into result serialization.
+### Runner Module (`runner/`)
+- Operates on a validated `Questionnaire` and a `LLMConversationFactory`
+  instance, deferring provider-specific setup to the connector layer.
+- Splits execution into two phases:
+  - `runner/executor.py` queries all configured LLMs concurrently. Within each
+    conversation it advances through questionnaire sections question-by-question,
+    builds prompts from question metadata, and calls
+    `LLMConversation.ask()` with retry/backoff semantics. After the final
+    question, it archives the transcript for evaluation.
+  - `runner/evaluator.py` consumes archived conversations, applies question-type
+    validators, computes `QuestionScore` aggregates, and assembles the final
+    benchmark report.
+- Ensures per-model isolation so network failures or validator issues for one
+  provider do not block other conversations from completing.
+- Captures timing metadata and structured responses needed downstream for JSON
+  reports, CLI summaries, and additional analytics.
 
 ### Support Utilities
 - `bin/validate_questionnaire.py`: CLI helper validating questionnaire files,
