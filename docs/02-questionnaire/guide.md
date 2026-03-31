@@ -151,7 +151,32 @@ Ensure section ordering reflects the experience you intend for participants.
 - Version bump questionnaires whenever question wording or scoring changes to
   keep result comparisons trustworthy.
 
-## 10. Checklist Before Commit
+## 10. Run in Population Mode
+
+Some questionnaires are intended for large-population studies where the goal is
+to observe the *distribution* of LLM answers rather than a single response.
+Use the `--total-population` and `--parallel-sessions` flags to query the same
+model repeatedly:
+
+```
+uv run rationale-benchmark \
+  --questionnaire burnout-survey \
+  --models gpt-4 \
+  --total-population 200 \
+  --parallel-sessions 10
+```
+
+- `--total-population`: total number of independent LLM completions to collect.
+- `--parallel-sessions`: how many completions run concurrently (default: 1).
+  Tune this against your model's rate-limit budget — higher values increase
+  throughput but risk hitting token-per-minute caps.
+- Every session is fully independent: fresh context, identical system prompt and
+  questions. No state is shared between sessions.
+- Results are saved per-session and aggregated into a population summary
+  containing distribution statistics (histograms, mean, standard deviation,
+  per-question entropy) for downstream analysis.
+
+## 11. Checklist Before Commit
 - [ ] All sections and questions have unique IDs.
 - [ ] Every question defines `scoring.total` and `scoring.weights`.
 - [ ] Rating weight lists include exactly one entry per rating value.
@@ -160,3 +185,5 @@ Ensure section ordering reflects the experience you intend for participants.
 - [ ] YAML lint passes (`uv run yamllint config/questionnaires/burnout-survey.yaml`).
 - [ ] README snippets remain accurate if examples were edited.
 - [ ] A clear `system_prompt` is defined and reviewed for experiment safety.
+- [ ] If population mode is intended, `--total-population` and
+  `--parallel-sessions` values are confirmed and within model rate-limit budgets.

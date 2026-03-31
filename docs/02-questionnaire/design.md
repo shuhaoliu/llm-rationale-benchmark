@@ -138,6 +138,13 @@ class Questionnaire:
   metadata: dict[str, str]
   system_prompt: str
   sections: list[Section]
+
+@dataclass
+class PopulationResult:
+  questionnaire_id: str
+  total_population: int
+  parallel_sessions: int
+  results: list[QuestionnaireResult]   # one entry per completed session
 ```
 
 An enum-backed `QuestionType` guards supported types and enables richer
@@ -179,6 +186,29 @@ Scoring is handled by pure functions to stay deterministic and testable.
    normalized score (e.g., sum of `awarded` / sum of `total`). Aggregation lives
    in the benchmark runner but relies on the consistent shape from this module.
 
+### Population Dispatch
+Some questionnaires are designed to be administered to a large population of
+respondents. Rather than collecting a single answer, the goal is to observe the
+*distribution* of answers — histograms, mean ± SD, per-question entropy, etc.
+— across many independent LLM sessions seeded by the same system prompt.
+
+The runner exposes two parameters that control this mode:
+
+| Parameter           | Type | Description                                                                   |
+|---------------------|------|-------------------------------------------------------------------------------|
+| `total_population`  | int  | Total number of independent LLM completions to collect for the questionnaire. |
+| `parallel_sessions` | int  | Maximum number of completions to run concurrently; governs throughput and rate-limit headroom. |
+
+**Execution model** — the runner schedules `total_population` sessions, keeping
+at most `parallel_sessions` in-flight simultaneously. Each session is fully
+independent: a fresh conversation context, the same `system_prompt`, and the
+same sequence of questions. No state is shared between sessions.
+
+**Output** — each completed session produces a `QuestionnaireResult`. The runner
+collects all results into a `PopulationResult` aggregate (see Data Model) that
+can be persisted and analysed to characterise how the LLM's answers are
+distributed across the population.
+
 ### File Discovery and Loading
 - Questionnaires live under `config/questionnaires/`.
 - Loader exposes:
@@ -205,6 +235,9 @@ Scoring is handled by pure functions to stay deterministic and testable.
   sync.
 - Round-trip tests ensure loaded questionnaires can serialize back to YAML
   without data loss (excluding comment formatting).
+- Population dispatch tests mock the LLM client and assert that exactly
+  `total_population` completions are requested with at most `parallel_sessions`
+  in-flight at any point, verifying both the count and the concurrency ceiling.
 
 ### Future Enhancements
 - Add conditional logic (skip patterns) between questions while keeping YAML
