@@ -277,6 +277,8 @@ def execute_benchmark(
   models: list[str],
   llm_config: str | None,
   max_concurrency: int,
+  total_population: int = 1,
+  parallel_sessions: int = 1,
 ) -> BenchmarkResult:
   """Run the benchmark runner synchronously."""
   factory = ConversationFactory(configs)
@@ -288,6 +290,8 @@ def execute_benchmark(
     questionnaires,
     models,
     llm_config=llm_config,
+    total_population=total_population,
+    parallel_sessions=parallel_sessions,
   )
 
 
@@ -342,6 +346,20 @@ def execute_benchmark(
   help="Maximum number of concurrent model executions.",
 )
 @click.option(
+  "--total-population",
+  type=click.INT,
+  default=1,
+  show_default=True,
+  help="Total independent LLM completions to collect per questionnaire (population mode).",
+)
+@click.option(
+  "--parallel-sessions",
+  type=click.INT,
+  default=1,
+  show_default=True,
+  help="Maximum concurrent LLM sessions when running in population mode.",
+)
+@click.option(
   "--verbose",
   is_flag=True,
   help="Enable verbose (DEBUG) logging.",
@@ -356,6 +374,8 @@ def main(
   list_llm_configs_flag: bool,
   config_dir: str,
   max_concurrency: int,
+  total_population: int,
+  parallel_sessions: int,
   verbose: bool,
 ) -> None:
   """Rationale Benchmark for Large Language Models."""
@@ -363,6 +383,16 @@ def main(
     raise click.BadParameter(
       "--max-concurrency must be >= 1",
       param_hint="--max-concurrency",
+    )
+  if total_population < 1:
+    raise click.BadParameter(
+      "--total-population must be >= 1",
+      param_hint="--total-population",
+    )
+  if parallel_sessions < 1:
+    raise click.BadParameter(
+      "--parallel-sessions must be >= 1",
+      param_hint="--parallel-sessions",
     )
 
   configure_logging(verbose)
@@ -425,6 +455,8 @@ def main(
     questionnaires=selected_questionnaires,
     models=selected_models,
     llm_config=llm_config,
+    total_population=total_population,
+    parallel_sessions=parallel_sessions,
   )
 
   try:
@@ -434,6 +466,8 @@ def main(
       models=selected_models,
       llm_config=llm_config,
       max_concurrency=max_concurrency,
+      total_population=total_population,
+      parallel_sessions=parallel_sessions,
     )
   except RunnerConfigError as exc:
     raise click.ClickException(str(exc)) from exc

@@ -18,6 +18,7 @@ from rationale_benchmark.runner.types import (
   BenchmarkSummary,
   ModelBenchmarkResult,
   ModelExecutionResult,
+  PopulationResult,
   QuestionnaireScore,
   QuestionResult,
   QuestionRunTrace,
@@ -37,6 +38,8 @@ class BenchmarkEvaluator:
     llm_config: str | None,
     started_at,
     completed_at,
+    total_population: int = 1,
+    parallel_sessions: int = 1,
   ) -> None:
     self._questionnaires = {q.id: q for q in questionnaires}
     self._questionnaire_ids = tuple(q.id for q in questionnaires)
@@ -44,6 +47,8 @@ class BenchmarkEvaluator:
     self._llm_config = llm_config
     self._started_at = started_at
     self._completed_at = completed_at
+    self._total_population = total_population
+    self._parallel_sessions = parallel_sessions
 
   def evaluate(
     self,
@@ -178,15 +183,35 @@ class BenchmarkEvaluator:
       llm_config=self._llm_config,
       started_at=self._started_at,
       completed_at=self._completed_at,
+      total_population=self._total_population,
+      parallel_sessions=self._parallel_sessions,
     )
 
     errors = list(execution_errors) + scoring_errors
+
+    population_results: list[PopulationResult] = []
+    if self._total_population > 1:
+      for model_result in model_results:
+        sessions_by_questionnaire: dict[str, list[QuestionnaireScore]] = defaultdict(list)
+        for qs in model_result.questionnaire_scores:
+          sessions_by_questionnaire[qs.questionnaire_id].append(qs)
+        for qid, sessions in sessions_by_questionnaire.items():
+          population_results.append(
+            PopulationResult(
+              questionnaire_id=qid,
+              model=model_result.model,
+              total_population=self._total_population,
+              parallel_sessions=self._parallel_sessions,
+              sessions=sessions,
+            )
+          )
 
     return BenchmarkResult(
       info=info,
       model_results=model_results,
       summary=summary,
       errors=errors,
+      population_results=population_results,
     )
 
   def _score_question(

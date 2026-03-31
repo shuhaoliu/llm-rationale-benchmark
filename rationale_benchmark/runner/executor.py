@@ -80,31 +80,48 @@ class BenchmarkRunner:
     models: Sequence[str],
     *,
     llm_config: str | None = None,
+    total_population: int = 1,
+    parallel_sessions: int = 1,
   ) -> BenchmarkResult:
     if not questionnaires:
       raise RunnerConfigError("At least one questionnaire must be provided")
     if not models:
       raise RunnerConfigError("At least one model must be provided")
-
-    plans = [
-      ModelExecutionPlan(model=model, questionnaires=tuple(questionnaires))
-      for model in models
-    ]
+    if total_population < 1:
+      raise RunnerConfigError("total_population must be >= 1")
+    if parallel_sessions < 1:
+      raise RunnerConfigError("parallel_sessions must be >= 1")
 
     started_at = now_utc()
-    semaphore = asyncio.Semaphore(self._max_concurrency)
-    tasks = [
-      asyncio.create_task(self._execute_model(plan, semaphore))
-      for plan in plans
-    ]
-
-    outcomes = await asyncio.gather(*tasks)
-
     execution_results: list[ModelExecutionResult] = []
     collected_errors: list[RunnerError] = []
-    for outcome in outcomes:
-      execution_results.extend(outcome.results)
-      collected_errors.extend(outcome.errors)
+
+    if total_population > 1:
+      population_semaphore = asyncio.Semaphore(parallel_sessions)
+      tasks = [
+        asyncio.create_task(
+          self._execute_questionnaire_bounded(model, questionnaire, population_semaphore)
+        )
+        for model in models
+        for questionnaire in questionnaires
+        for _ in range(total_population)
+      ]
+      raw_results = await asyncio.gather(*tasks)
+      for result, errors in raw_results:
+        execution_results.append(result)
+        collected_errors.extend(errors)
+    else:
+      plans = [
+        ModelExecutionPlan(model=model, questionnaires=tuple(questionnaires))
+        for model in models
+      ]
+      semaphore = asyncio.Semaphore(self._max_concurrency)
+      outcomes = await asyncio.gather(
+        *[asyncio.create_task(self._execute_model(plan, semaphore)) for plan in plans]
+      )
+      for outcome in outcomes:
+        execution_results.extend(outcome.results)
+        collected_errors.extend(outcome.errors)
 
     completed_at = now_utc()
 
@@ -114,6 +131,8 @@ class BenchmarkRunner:
       llm_config=llm_config,
       started_at=started_at,
       completed_at=completed_at,
+      total_population=total_population,
+      parallel_sessions=parallel_sessions,
     )
     return evaluator.evaluate(execution_results, collected_errors)
 
@@ -123,6 +142,8 @@ class BenchmarkRunner:
     models: Sequence[str],
     *,
     llm_config: str | None = None,
+    total_population: int = 1,
+    parallel_sessions: int = 1,
   ) -> BenchmarkResult:
     """Synchronous wrapper executing the benchmark in a new event loop."""
 
@@ -131,6 +152,8 @@ class BenchmarkRunner:
         questionnaires,
         models,
         llm_config=llm_config,
+        total_population=total_population,
+        parallel_sessions=parallel_sessions,
       )
     )
 
@@ -156,6 +179,15 @@ class BenchmarkRunner:
         results=results,
         errors=errors,
       )
+
+  async def _execute_questionnaire_bounded(
+    self,
+    model: str,
+    questionnaire: Questionnaire,
+    semaphore: asyncio.Semaphore,
+  ) -> tuple[ModelExecutionResult, list[RunnerError]]:
+    async with semaphore:
+      return await self._execute_questionnaire(model, questionnaire)
 
   async def _execute_questionnaire(
     self,

@@ -66,6 +66,8 @@ class BenchmarkInfo:
   llm_config: Optional[str]
   started_at: datetime
   completed_at: datetime
+  total_population: int = 1
+  parallel_sessions: int = 1
 
 
 @dataclass
@@ -140,6 +142,17 @@ class BenchmarkSummary:
 
 
 @dataclass
+class PopulationResult:
+  """Distribution of answers for a questionnaire dispatched across many independent sessions."""
+
+  questionnaire_id: str
+  model: str
+  total_population: int
+  parallel_sessions: int
+  sessions: list[QuestionnaireScore]
+
+
+@dataclass
 class BenchmarkResult:
   """Top-level result returned by the runner."""
 
@@ -147,6 +160,7 @@ class BenchmarkResult:
   model_results: list[ModelBenchmarkResult]
   summary: BenchmarkSummary
   errors: list[RunnerError] = field(default_factory=list)
+  population_results: list[PopulationResult] = field(default_factory=list)
 
 
 def now_utc() -> datetime:
@@ -161,6 +175,7 @@ __all__ = [
   "BenchmarkSummary",
   "ModelBenchmarkResult",
   "ModelExecutionResult",
+  "PopulationResult",
   "PromptContext",
   "QuestionResult",
   "QuestionRunTrace",
