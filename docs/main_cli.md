@@ -21,11 +21,11 @@ and logging policies.
    `config/llms/`) with optional overrides.
 3. Load the requested questionnaire definitions and LLM configuration via the
    configuration and questionnaire modules.
-4. Instantiate the runner with validated inputs, concurrency parameters, and
-   output settings.
-5. Resolve the effective population count for each questionnaire.
-6. Execute questionnaires against each selected model.
-7. Persist JSON results (file or stdout) and render a human-readable summary.
+4. Resolve the effective population count for each questionnaire.
+5. Instantiate one runner execution per questionnaire with validated inputs,
+   concurrency parameters, and output settings.
+6. Execute each questionnaire against the selected models.
+7. Persist raw JSONL response records and render a human-readable summary.
 8. Exit with `0` on success, non-zero for validation or runtime failures.
 
 ### Options
@@ -37,17 +37,15 @@ and logging policies.
   listed models present in the chosen LLM config.
 - `--config-dir <path>`: Override base directory holding `llms/` and
   `questionnaires/` subdirectories (defaults to `./config`).
-- `--output <path>`: Write JSON report to a specific file; omit to print to
-  stdout.
+- `--output <path>`: Write JSONL response records to a specific file; omit to
+  print to stdout.
 - `--list-questionnaires`: List discovered questionnaire IDs and exit.
 - `--list-llm-configs`: List available LLM configuration stems and exit.
 - `--verbose`: Elevate logging to verbose/DEBUG mode.
 - `--total-population <int>`: Optional positive integer overriding each
   questionnaire's `metadata.default_population`.
-- `--parallel-sessions <int>`: Maximum concurrent questionnaire
-  administrations; defaults to `1`.
-- `--max-concurrency <int>`: (Planned) Override default concurrency ceiling
-  passed to the runner.
+- `--max-concurrency <int>`: Maximum concurrent provider calls across LLMs,
+  population members, and questionnaire sections; defaults to `5`.
 - `--help`: Show usage.
 
 When mutually exclusive options are supplied together (e.g., both
@@ -68,9 +66,12 @@ and display a concise error along with the usage text.
 
 ## Questionnaire Selection Semantics
 - Without selection flags, run all questionnaires discovered in
-  `questionnaires/`, sorted by filename for determinism.
+  `questionnaires/`, sorted by filename for determinism. The CLI invokes the
+  runner separately for each questionnaire because one runner execution accepts
+  only one questionnaire.
 - `--questionnaire` accepts a single ID; `--questionnaires` parses a
-  comma-delimited list and removes whitespace.
+  comma-delimited list and removes whitespace. Multiple selected questionnaires
+  produce multiple runner executions.
 - Each requested questionnaire must exist; missing IDs produce
   `QuestionnaireConfigError` identifying the first missing file.
 - Loaded questionnaires undergo schema and semantic validation defined in
@@ -91,27 +92,31 @@ and display a concise error along with the usage text.
 
 ## Runner Integration
 - Instantiate `BenchmarkRunner` with:
-  - Validated questionnaires.
+  - One validated questionnaire.
   - `LLMConversationFactory` derived from the merged LLM config.
-  - Effective `total_population` per questionnaire, resolved from
+  - Effective `total_population` for that questionnaire, resolved from
     `--total-population` or `metadata.default_population`.
-  - Population concurrency from `--parallel-sessions`.
-  - Provider-call concurrency limit (default derived from provider hints;
-    overridden by `--max-concurrency` when available).
+  - Provider-call concurrency limit from `--max-concurrency`, defaulting to
+    `5`.
   - Output descriptors (target path, stdout flag).
+- The runner may query different LLMs, population members, and sections in
+  parallel. The theoretical maximum parallelism for one runner execution is
+  `#SpecifiedLLMs * #Population * #Sections`; `--max-concurrency` caps the real
+  number of concurrent provider calls.
 - Propagate CLI `--verbose` flag to logging and to runner diagnostics so
   question-level events surface when requested.
-- Gracefully handle `KeyboardInterrupt`: persist any completed transcripts and
+- Gracefully handle `KeyboardInterrupt`: preserve any completed JSONL records and
   exit with status `130`.
 
 ## Output Specification
-- JSON report structure mirrors `docs/architecture.md` (`benchmark_info`,
-  `results`, `summary`).
-- Default behavior writes the JSON payload to stdout; when `--output` is
-  supplied, write to the provided path and emit a confirmation message to stderr
-  summarizing location and key metrics (e.g., questionnaires run, model count).
-- CLI summary prints a table or bullet list showing per-model average score,
-  questionnaires executed, and any warnings (e.g., retries, validator failures).
+- Output records use the raw JSONL contract defined in
+  `docs/03-runner/design.md`.
+- Default behavior writes JSONL records to stdout; when `--output` is supplied,
+  write to the provided path and emit a confirmation message to stderr
+  summarizing location and key metrics (e.g., questionnaire ID, model count,
+  population size, records written).
+- CLI summary prints a concise run summary showing records written and any
+  runner warnings or errors (e.g., retries, validation failures).
 - Respect project logging policy: structured JSON logs at INFO level; human
   summaries restricted to stdout/stderr separation for shell scripting.
 
@@ -122,9 +127,9 @@ and display a concise error along with the usage text.
   `QuestionnaireConfigError`; report source file, key path, and guidance.
 - Runtime errors within the runner return status `1`. CLI must surface a
   concise summary plus pointer to detailed logs or partial outputs.
-- On partial success (some models fail), include failure reasons in the JSON
-  output and mark the process exit code as non-zero while preserving successful
-  model results.
+- On partial success (some models fail), include failure reasons in JSONL
+  `errors` fields when record-level output is possible and mark the process
+  exit code as non-zero while preserving successful raw records.
 
 ## Environment & Secrets
 - Do not read secrets from files by default; rely on `os.environ`.
@@ -144,20 +149,20 @@ and display a concise error along with the usage text.
 - Unit tests cover:
   - Option parsing and mutually exclusive arguments.
   - Positive integer validation for `--total-population` and
-    `--parallel-sessions`.
+    `--max-concurrency`.
   - CLI `--total-population` override precedence over
     `metadata.default_population`.
   - Listing commands producing deterministic output.
   - Configuration resolution errors (missing files, unresolved environment
     variables).
 - Integration tests (with fixtures and mock providers) verify full execution
-  path, JSON output schema, and exit codes for mixed-success scenarios.
+  path, JSONL output schema, and exit codes for mixed-success scenarios.
 - Tests run via `uv run pytest`, organized under `tests/cli/`.
 
 ## Extensibility Guidelines
 - Additional commands or subcommands must preserve compatibility with existing
   flags. Prefer additive flags over breaking changes.
 - When introducing new outputs (e.g., CSV), gate behind explicit options to
-  avoid altering default JSON payload.
+  avoid altering the default JSONL payload.
 - Keep CLI logic thin; push new business rules into configuration loaders,
   questionnaire validators, or runner components to maintain modularity.

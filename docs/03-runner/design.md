@@ -1,258 +1,274 @@
 # Runner Module Design
 
 ## Purpose and Scope
-- Coordinate questionnaire execution against one or more LLM providers using
-  standardized conversations and scoring semantics.
-- Guarantee per-model isolation so connector, validator, or scoring failures do
-  not prevent other models from completing.
-- Capture reproducible artifacts (transcripts, scoring breakdowns, telemetry)
-  that downstream consumers use for CLI summaries, JSON reports, and analytics.
+- Coordinate questionnaire execution against one or more LLMs and capture raw
+  responses for downstream processing.
+- Administer one loaded and validated questionnaire for the effective
+  population size requested by the CLI. A single runner execution accepts
+  exactly one questionnaire and one or more CLI-specified LLM IDs.
+- Write all raw LLM responses to one JSONL output file. Each line represents one
+  complete questionnaire administration for one CLI-specified LLM ID and one
+  population member.
+- Validate response shape and question coverage before writing records.
 
 Out of scope: configuration parsing (handled by the configuration layer),
-questionnaire validation/modeling (owned by the questionnaire module), and
-provider-specific transport logic (owned by the LLM connector layer).
+questionnaire loading/modeling (owned by the questionnaire module),
+provider-specific transport logic (owned by the LLM connector layer), scoring,
+aggregation, analysis, and report generation.
 
 ## Inputs and Dependencies
-- `Questionnaire` objects loaded and validated by `questionnaire.loader`.
-- `LLMConversationFactory` initialized by the CLI with resolved configuration
-  mappings.
-- Runner configuration (concurrency limits, retry overrides, output paths)
-  supplied through CLI options and environment variables; defaults documented in
-  `docs/configs.md`.
-- Effective population size resolved from `--total-population` when supplied,
-  otherwise from each questionnaire's `metadata.default_population`.
-- Scoring utilities and data models defined in `docs/interfaces.md`.
-- Structured logging helpers shared across the project (JSON output via
-  `structlog`).
+- `Questionnaire` objects already loaded and validated by
+  `questionnaire.loader`.
+- Runner configuration supplied by the CLI, including concurrency limits, retry
+  overrides, selected LLM IDs, and the output JSONL path.
+- Effective population size resolved by the CLI from `--total-population` when
+  supplied, otherwise from each questionnaire's
+  `metadata.default_population`.
+- `LLMConversationFactory` initialized by the CLI with resolved provider
+  configuration.
+- Structured logging helpers shared across the project.
 
 The runner module never mutates questionnaire or connector configuration. It
-derives execution-time metadata (timestamps, latency metrics, attempt counts)
-and produces immutable result objects.
+does not read scoring utilities and does not perform analysis over raw results.
+Its only interpretation of answers is validation that the returned raw response
+can be mapped back to the questionnaire sections and questions by ID.
 
 ## High-Level Execution Flow
-1. The CLI aggregates selected questionnaires and a target LLM configuration,
-   then instantiates `BenchmarkRunner` (wrapper defined in `runner/executor.py`)
-   with a `LLMConversationFactory`, concurrency policy, and output descriptors.
-2. `BenchmarkRunner` prepares execution plans for each `provider/model`
-   requested, including questionnaire metadata, resolved `total_population`,
-   and derived system prompts.
-3. Executor launches per-model and per-population tasks concurrently. Each
-   questionnaire administration:
-   - Creates fresh section-scoped `LLMConversation` instances.
-   - Runs independent sections concurrently when capacity allows.
-   - Iterates questions within each section sequentially.
-   - Builds prompts and validator hooks for the current question.
-   - Includes prior question-answer pairs from the same section only.
-   - Calls `LLMConversation.ask()` with runner-managed retry/backoff overrides.
-   - Records `LLMResponse` plus structured metadata for evaluation.
-   - Archives section transcripts when all questions are answered or a fatal
-     error occurs.
-4. Completed transcripts feed into `runner/evaluator.py`, which applies
-   question-level validators, computes `QuestionScore`/`SectionScore` objects,
-   and produces aggregate statistics.
-5. Runner collates execution metadata, scores, and raw answers into a benchmark
-   report that upstream components serialize to JSON and display in the CLI.
-6. Final status includes success/failure per model, encountered errors, and any
-   warnings related to validation or scoring anomalies.
+1. The CLI loads and validates one questionnaire for this runner execution,
+   resolves runner configuration, resolves the effective population size, and
+   instantiates `BenchmarkRunner` from `runner/executor.py`.
+2. `BenchmarkRunner` creates execution plans for each CLI-specified LLM ID and
+   population member.
+3. The executor runs independent questionnaire administrations concurrently,
+   subject to runner and provider concurrency limits.
+4. Within one questionnaire administration, sections may run concurrently
+   because their conversations are independent.
+5. Within one section, questions are always queried sequentially. Later
+   questions include conversation history from earlier questions in the same
+   section.
+6. When all sections in an administration complete, the executor validates the
+   assembled response object against the questionnaire structure.
+7. The runner appends one raw JSON record to the single JSONL output file.
 
 ## Module Structure
-- `runner/__init__.py`: Exposes public runner APIs (e.g., `BenchmarkRunner`,
-  `BenchmarkResult`).
-- `runner/executor.py`: Orchestrates questionnaire execution, concurrency, and
-  transcript collection.
-- `runner/evaluator.py`: Performs validation, scoring, aggregation, and summary
-  generation over archived conversations.
-- `runner/prompts.py` (planned): Helper utilities for constructing question
-  prompts, system prompt overrides, and validator bindings.
-- `runner/types.py`: Data classes describing execution inputs, intermediate
-  artifacts, and emitted results.
+- `runner/__init__.py`: Exposes public runner APIs such as `BenchmarkRunner`
+  and raw response result types.
+- `runner/executor.py`: Builds execution plans, schedules work, queries LLMs,
+  validates raw response shape, and appends JSONL records.
+- `runner/prompts.py` (planned): Helper utilities for constructing section and
+  question prompts.
+- `runner/types.py`: Data classes describing execution inputs, raw response
+  records, question traces, and runner errors.
+
+The runner module does not include `runner/evaluator.py`. Scoring,
+aggregation, and analytics are deferred to separate components that consume the
+JSONL output.
 
 ## Executor Responsibilities
 
 ### Execution Planning
-- Validate that every requested `provider/model` exists in the conversation
-  factory configuration; raise a descriptive `RunnerConfigError` when a model is
-  missing.
-- Merge questionnaire `system_prompt` with CLI overrides and per-model metadata.
-- Produce an immutable `ModelExecutionPlan` describing questionnaire IDs,
-  resolved `total_population`, section execution groups, retry policies, and
-  output destinations.
-- Validate population resolution: a provided CLI `--total-population` must be a
-  positive integer and overrides `metadata.default_population`; otherwise the
-  metadata default is used.
+- Validate that every requested LLM ID from the CLI is available through the
+  conversation factory configuration. Preserve the exact CLI-specified LLM ID
+  in output records.
+- Produce immutable execution plans for the questionnaire, each LLM ID, and
+  population index.
+- Carry the effective population size as an input from the CLI instead of
+  resolving it internally.
+- Validate that the output path can be opened for append/write before issuing
+  provider requests.
 
 ### Concurrency Model
-- Default to asynchronous execution using `asyncio`, with a configurable
-  semaphore limiting the number of simultaneous provider calls. The semaphore
-  defaults to the minimum of the CLI `--max-concurrency` flag and provider
-  `max_concurrent` hints derived from configuration metadata.
-- Use `--parallel-sessions` to cap the number of questionnaire administrations
-  in flight for population runs.
-- Each model plan runs in its own task to preserve isolation. Tasks share a
-  `RunnerTracer` for logging but never share mutable transcript state.
-- Sections within one administration may run concurrently because each section
-  has its own context.
-- Executor collects task results via `asyncio.gather(return_exceptions=True)` so
-  individual failures become structured errors without cancelling other tasks.
+- Use asynchronous execution with a configurable semaphore limiting
+  simultaneous provider calls. The semaphore size comes from the CLI
+  `--max-concurrency` argument, which defaults to `5`.
+- Run parallel and independent administrations over the population of the same
+  LLM. For example, an effective population size of `20` creates 20
+  independent questionnaire administrations for each selected LLM.
+- Run administrations for different LLM IDs independently so one LLM failure
+  does not cancel unrelated LLMs.
+- Run different sections within the same questionnaire administration in
+  parallel when capacity allows.
+- The theoretical maximum parallel provider-call frontier is:
+  `#SpecifiedLLMs * #Population * #Sections`. The real number of concurrent
+  provider calls is capped by `--max-concurrency`.
+- Preserve strict sequential execution for questions within the same section.
+- Use `asyncio.gather(return_exceptions=True)` or equivalent structured task
+  collection so individual failures become structured runner errors.
 
 ### Question Loop
 - For each section:
-  - Start a section-scoped conversation using the questionnaire system prompt
-    and that section's instructions.
-  - Exclude question-answer pairs from every other section.
-- For each question:
-  - Construct a `PromptContext` containing questionnaire metadata, section
-    instructions, prior in-section question-answer pairs, and question prompt.
-    Reuse templates from `runner/prompts.py` to maintain consistent formatting.
-  - Resolve validators appropriate for the `QuestionType` using the questionnaire
-    module's helper registry.
-  - Call `conversation.ask(prompt, validator=..., max_attempts=override)` and
-    capture `LLMResponse`. If validator returns `False`, executor triggers
-    retry/backoff until max attempts are exhausted.
-  - Record per-attempt metadata (latency, retry count, validator failures) in a
-    mutable `QuestionRunTrace`. Only the final successful response is forwarded
-    to evaluation.
-- On exhaustion of retries, mark the question result as failed, capture the last
-  error, and continue executing the remaining questions (unless CLI requests
-  abort-on-error). Failed questions still produce partial artifacts for post-run
-  analysis.
-- Preserve ordering within each section; later questions must not start until
-  preceding questions in that section have final answers or terminal failures.
+  - Start a fresh section-scoped `LLMConversation` using the questionnaire
+    system prompt and that section's instructions.
+  - Do not include question-answer pairs from any other section.
+- For each question in section order:
+  - Construct a prompt containing questionnaire metadata needed for context,
+    the section instructions, the current question ID and prompt, and the
+    prior in-section conversation history.
+  - Call `LLMConversation.ask()` with runner-managed retry/backoff overrides.
+  - Preserve the raw provider response for that question without scoring or
+    analysis.
+  - Add the question and answer to the section conversation history before the
+    next question starts.
+- If retries are exhausted, record a structured error for that question and
+  continue other independent work unless the runner configuration requests
+  abort-on-error.
 
-### Conversation Finalization
-- After a questionnaire finishes (or aborts), call `conversation.archive()` to
-  obtain immutable section-scoped `ConversationTurn` histories. Store alongside
-  per-question traces inside a `ModelExecutionResult`.
-- Ensure archives cannot be reused by verifying `LLMConversation.is_archived`
-  before returning the result. Attempting to reuse triggers logged warnings.
+### Raw Response Assembly
+- Build one response object per questionnaire administration.
+- The response object mirrors the questionnaire structure by ID:
+  - Each section entry includes the section ID. In the current questionnaire
+    model, `Section.name` is the canonical section identifier.
+  - Each question entry includes the question ID.
+  - Each question entry stores the raw `LLMResponse` payload or a raw answer
+    value plus provider metadata exposed by the connector.
+- Validate that every emitted section/question reference exists in the loaded
+  questionnaire.
+- Validate that required section/question IDs are present or that missing
+  answers have explicit error entries.
+- Do not compute scores, section totals, averages, summaries, or cross-model
+  comparisons.
 
-### Error Handling
-- Catch `ConfigurationError`, `ConversationArchivedError`, and provider-specific
-  exceptions. Normalize them into `RunnerError` objects containing:
-  - `model`: provider/model identifier.
-  - `stage`: `"prompt"`, `"validation"`, `"network"`, `"scoring"`, etc.
-  - `message`, `details`, `retry_count`.
-- Continue execution for unaffected models. Summaries include counts of
-  warnings vs. fatal errors; CLI uses this to determine exit codes.
+## JSONL Output Contract
+The runner writes a single JSONL file for the whole run. Each line is one JSON
+object:
 
-## Evaluator Responsibilities
+```json
+{
+  "questionnaire": {
+    "name": "burnout-survey",
+    "path": "config/questionnaires/burnout-survey.yaml"
+  },
+  "llm_id": "gpt-4",
+  "population_index": 0,
+  "query_time": "2026-04-27T10:30:00Z",
+  "response": {
+    "sections": [
+      {
+        "id": "emotional_exhaustion",
+        "questions": [
+          {
+            "id": "ee_1",
+            "response": {
+              "raw": "4",
+              "metadata": {
+                "provider": "openai",
+                "model": "gpt-4"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "errors": []
+}
+```
 
-### Inputs
-- `ModelExecutionResult` containing archived transcripts, per-question
-  responses, and error traces.
-- Questionnaire metadata including scoring rules from `Question` and
-  `ScoringRule`.
+Field requirements:
+- `questionnaire.name`: questionnaire ID or name from the loaded questionnaire.
+- `questionnaire.path`: source path when available from the loader.
+- `llm_id`: exact LLM ID string specified in the CLI.
+- `population_index`: zero-based index of the independent questionnaire
+  administration for that LLM.
+- `query_time`: timestamp of the first provider query for this JSONL record.
+- `response`: raw response object matching the questionnaire section/question
+  structure. Section and question IDs must be included so downstream components
+  can resolve answers without relying on ordering alone.
+- `errors`: structured runner errors for missing, failed, or invalid raw
+  answers. Empty when validation succeeds without recoverable errors.
 
-### Processing Steps
-1. Normalize responses into a `QuestionAnswer` structure capturing the raw
-   answer, reasoning field (if provided), token usage, and latency.
-2. Apply question-type validators (rating range checks, option membership). On
-   failure, emit `QuestionScore` with `awarded=0`, annotate the failure, and
-   continue scoring.
-3. Compute per-question scores using questionnaire scoring weights. Combine
-   into `SectionScore` and `QuestionnaireScore` aggregates.
-4. Generate model-level summaries (average score, completion rate, total cost)
-   plus cross-model aggregates required for CLI/JSON reports.
-5. Produce a `BenchmarkResult` object containing:
-   - `benchmark_info` snapshot (questionnaires executed, models tested,
-     timestamps).
-  - `model_results`: list of `ModelBenchmarkResult` entries with question-level
-    data.
-  - `summary`: totals by questionnaire and by model.
+The writer must append records atomically with respect to concurrent tasks, for
+example by serializing writes through a single async writer task or a file lock.
 
-### Error and Warning Propagation
-- Carry forward executor warnings (e.g., retries, validator failures) into the
-  scoring output so the CLI can display them.
-- Distinguish between recoverable scoring issues (invalid answer format,
-  missing rationale) and unrecoverable evaluation errors (transcript missing,
-  scoring rule misconfigured). Unrecoverable errors short-circuit evaluation for
-  the affected model while preserving other results.
+## Error Handling
+- Catch configuration, conversation lifecycle, validation, timeout, and
+  provider-specific exceptions.
+- Normalize errors into `RunnerError` objects containing:
+  - `llm_id`: exact CLI-specified LLM ID.
+  - `questionnaire_id`: loaded questionnaire ID or name.
+  - `population_index`: independent administration index.
+  - `section_id` and `question_id` when the error is question-specific.
+  - `stage`: `"planning"`, `"prompt"`, `"validation"`, `"network"`,
+    `"write"`, or `"runtime"`.
+  - `message`, `details`, and `retry_count`.
+- Continue execution for unaffected LLMs, population members, and sections.
+- Include recoverable errors in the JSONL record. Fatal planning or write
+  errors should fail the run before issuing more provider requests.
 
 ## Data Contracts
 
 ### runner/types.py (proposed)
 ```python
 @dataclass(frozen=True)
-class PromptContext:
-  questionnaire_id: str
-  section_name: str
-  question: Question
-  prior_answers: list[QuestionAnswer]
-  system_prompt: str
+class RunnerExecutionPlan:
+  questionnaire: Questionnaire
+  questionnaire_path: Path | None
+  llm_id: str
+  population_index: int
+  output_path: Path
 
 @dataclass
 class QuestionRunTrace:
+  section_id: str
   question_id: str
-  prompt: str
   response: LLMResponse | None
   attempts: int
-  latency_ms: int | None
   errors: list[RunnerError]
 
 @dataclass
-class ModelExecutionResult:
-  model: str
-  questionnaire_id: str
+class RawResponseRecord:
+  questionnaire_name: str
+  questionnaire_path: Path | None
+  llm_id: str
   population_index: int
-  section_transcripts: dict[str, list[ConversationTurn]]
-  question_traces: list[QuestionRunTrace]
-  started_at: datetime
-  completed_at: datetime | None
+  query_time: datetime
+  response: dict[str, Any]
   errors: list[RunnerError]
-
-@dataclass
-class BenchmarkResult:
-  benchmark_info: BenchmarkInfo
-  model_results: list[ModelBenchmarkResult]
-  summary: BenchmarkSummary
 ```
 
-Concrete summary structures mirror the JSON schema defined in
-`docs/architecture.md`. Keeping these as dataclasses simplifies serialization
-and unit testing.
+These types describe runner-owned artifacts only. Scored result types belong to
+downstream analysis components.
 
 ## Observability and Telemetry
 - Emit structured logs per question attempt with fields:
-  `questionnaire_id`, `model`, `question_id`, `attempt`, `latency_ms`,
-  `validator_passed`, `retry_reason`.
-- Record timing metrics at both question and model granularity. The executor
-  exposes hooks (`on_question_start`, `on_question_end`, `on_model_complete`)
-  that can be wired to metrics exporters or CLI progress bars.
-- Preserve prompt/response text in transcripts while redacting sensitive fields
-  (API keys, environment references). Traces persist on disk only when the user
-  enables a `--save-transcripts` flag.
+  `questionnaire_id`, `llm_id`, `population_index`, `section_id`,
+  `question_id`, `attempt`, `latency_ms`, and `retry_reason`.
+- Record timing metadata for diagnostics, but keep JSONL output focused on raw
+  responses and errors.
+- Expose progress callbacks for the CLI, such as administration start,
+  question complete, administration complete, and record written.
+- Redact sensitive configuration fields before logging or writing provider
+  metadata.
 
 ## Extensibility
-- Adding new question types only requires validator/weight logic updates in the
-  questionnaire module; the runner consumes the normalized API.
-- Concurrency strategies remain pluggable: executor exposes an interface for
-  alternative schedulers (e.g., thread pool for sync providers, job queue for
-  distributed execution).
-- Additional output formats (CSV, Parquet) can wrap `BenchmarkResult` without
-  modifying executor logic.
-- Future enhancements may include adaptive retry policies, cost estimation
-  plugins, and partial questionnaire execution for skipped sections.
+- New question types only require prompt construction and raw response
+  validation support in the questionnaire-facing helpers used by the runner.
+- Scoring and analytics can evolve independently by consuming the stable JSONL
+  output contract.
+- Additional output formats can be implemented as downstream converters from
+  JSONL rather than new runner responsibilities.
+- Alternative scheduling strategies can replace the default async executor if
+  they preserve the same concurrency and ordering guarantees.
 
 ## Testing Strategy
-- Unit tests for executor planning and question loops using stubbed
-  `LLMConversation` objects that simulate retries, timeouts, and validator
-  failures.
-- Unit tests for population resolution, including CLI override precedence and
-  rejection of non-positive `--total-population` values.
-- Concurrency tests verifying sections can run concurrently while questions
-  within a section remain sequential and receive only in-section context.
-- Integration tests covering end-to-end execution against fixture
-  questionnaires and mock providers to assert transcript archiving and scoring
-  accuracy.
-- Property-based tests for evaluator scoring to verify invariants (awarded score
-  never exceeds total, section totals equal question sums).
-- Regression suites verifying JSON report stability and error propagation to the
-  CLI.
+- Unit tests for execution planning using stubbed questionnaires and LLM IDs.
+- Unit tests for population scheduling verifying independent administrations
+  are created for the effective population size.
+- Concurrency tests verifying population members and sections can run
+  concurrently while questions within a section remain sequential.
+- Conversation-context tests verifying later questions receive only prior
+  in-section history.
+- JSONL writer tests verifying one complete record per administration and
+  atomic writes under concurrent completion.
+- Validation tests verifying emitted section/question IDs must exist in the
+  loaded questionnaire and that missing answers become explicit errors.
+- Integration tests with fixture questionnaires and mock providers to assert
+  raw JSONL output shape.
 
 ## Future Work
-- Implement a resumable execution mode that persists progress to disk and
-  resumes after interruptions.
-- Support streaming responses with incremental validation once provider adapters
-  expose streaming hooks.
-- Integrate optional cost tracking by consuming token usage metadata from
-  `LLMResponse`.
+- Implement a resumable execution mode that persists completed JSONL records and
+  skips administrations already captured.
+- Support streaming responses with incremental validation once provider
+  adapters expose streaming hooks.
+- Integrate optional cost tracking in downstream analysis by consuming token
+  usage metadata from raw provider responses.
