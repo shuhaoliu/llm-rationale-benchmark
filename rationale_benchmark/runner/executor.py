@@ -1,14 +1,14 @@
-"""Asynchronous execution orchestrator for benchmark runs."""
+"""Asynchronous execution orchestrator for raw questionnaire runs."""
 
 from __future__ import annotations
 
 import asyncio
-import time
+import json
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol
 
-from rationale_benchmark.llm.conversation import ConversationTurn, LLMConversation
+from rationale_benchmark.llm.conversation import LLMConversation, LLMResponse
 from rationale_benchmark.llm.exceptions import (
   ConfigurationError,
   ConversationArchivedError,
@@ -18,16 +18,13 @@ from rationale_benchmark.llm.exceptions import (
 from rationale_benchmark.questionnaire.models import Questionnaire, Section
 from rationale_benchmark.runner.prompts import build_prompt
 from rationale_benchmark.runner.types import (
-  BenchmarkResult,
-  ModelExecutionResult,
   PromptContext,
   QuestionAnswer,
-  QuestionRunTrace,
+  RawResponseRecord,
+  RawRunResult,
   RunnerError,
   now_utc,
 )
-
-from .evaluator import BenchmarkEvaluator
 
 
 class ConversationFactoryProtocol(Protocol):
@@ -41,35 +38,18 @@ class ConversationFactoryProtocol(Protocol):
   ) -> LLMConversation: ...
 
 
-@dataclass(frozen=True)
-class ModelExecutionPlan:
-  """Immutable execution plan for a single model."""
-
-  model: str
-  questionnaires: tuple[Questionnaire, ...]
-
-
-@dataclass
-class ModelRunOutcome:
-  """Aggregated outcome for a model after execution."""
-
-  model: str
-  results: list[ModelExecutionResult]
-  errors: list[RunnerError]
-
-
 class RunnerConfigError(RuntimeError):
   """Raised when runner configuration is invalid."""
 
 
 class BenchmarkRunner:
-  """Coordinate questionnaire execution across multiple models."""
+  """Coordinate raw questionnaire execution for one questionnaire."""
 
   def __init__(
     self,
     conversation_factory: ConversationFactoryProtocol,
     *,
-    max_concurrency: int = 4,
+    max_concurrency: int = 5,
   ) -> None:
     if max_concurrency < 1:
       raise RunnerConfigError("max_concurrency must be >= 1")
@@ -78,209 +58,206 @@ class BenchmarkRunner:
 
   async def run(
     self,
-    questionnaires: Sequence[Questionnaire],
-    models: Sequence[str],
+    questionnaire: Questionnaire | None = None,
+    llm_ids: Sequence[str] | None = None,
     *,
-    llm_config: str | None = None,
+    questionnaires: Sequence[Questionnaire] | None = None,
     total_population: int | None = None,
-    parallel_sessions: int = 1,
-  ) -> BenchmarkResult:
-    if not questionnaires:
-      raise RunnerConfigError("At least one questionnaire must be provided")
-    if not models:
-      raise RunnerConfigError("At least one model must be provided")
+    output_path: Path | str | None = None,
+    questionnaire_path: Path | str | None = None,
+  ) -> RawRunResult:
+    """Execute one questionnaire and return raw response records."""
+
+    questionnaire = self._resolve_single_questionnaire(
+      questionnaire,
+      questionnaires,
+    )
+    if not llm_ids:
+      raise RunnerConfigError("At least one LLM ID must be provided")
     if total_population is not None and total_population < 1:
       raise RunnerConfigError("total_population must be >= 1")
-    if parallel_sessions < 1:
-      raise RunnerConfigError("parallel_sessions must be >= 1")
 
-    population_by_questionnaire = {
-      questionnaire.id: (
-        total_population
-        if total_population is not None
-        else questionnaire.default_population
-      )
-      for questionnaire in questionnaires
-    }
-    resolved_total_population = max(population_by_questionnaire.values())
+    population = total_population or questionnaire.default_population
+    if population < 1:
+      raise RunnerConfigError("effective population must be >= 1")
 
-    started_at = now_utc()
-    execution_results: list[ModelExecutionResult] = []
-    collected_errors: list[RunnerError] = []
+    destination = Path(output_path) if output_path is not None else None
+    source_path = (
+      Path(questionnaire_path) if questionnaire_path is not None else None
+    )
+    if destination is not None:
+      self._validate_output_path(destination)
 
-    population_semaphore = asyncio.Semaphore(parallel_sessions)
     provider_semaphore = asyncio.Semaphore(self._max_concurrency)
+    write_lock = asyncio.Lock()
     tasks = [
       asyncio.create_task(
-        self._execute_questionnaire_bounded(
-          model,
-          questionnaire,
-          population_index,
-          population_semaphore,
-          provider_semaphore,
+        self._execute_questionnaire(
+          questionnaire=questionnaire,
+          questionnaire_path=source_path,
+          llm_id=llm_id,
+          population_index=population_index,
+          provider_semaphore=provider_semaphore,
+          output_path=destination,
+          write_lock=write_lock,
         )
       )
-      for model in models
-      for questionnaire in questionnaires
-      for population_index in range(population_by_questionnaire[questionnaire.id])
+      for llm_id in llm_ids
+      for population_index in range(population)
     ]
-    raw_results = await asyncio.gather(*tasks)
-    for result, errors in raw_results:
-      execution_results.append(result)
-      collected_errors.extend(errors)
 
-    completed_at = now_utc()
+    records: list[RawResponseRecord] = []
+    errors: list[RunnerError] = []
+    for outcome in await asyncio.gather(*tasks, return_exceptions=True):
+      if isinstance(outcome, Exception):
+        error = RunnerError(
+          llm_id="",
+          stage="runtime",
+          message=str(outcome),
+        )
+        errors.append(error)
+        continue
+      records.append(outcome)
+      errors.extend(outcome.errors)
 
-    evaluator = BenchmarkEvaluator(
-      questionnaires=questionnaires,
-      models=models,
-      llm_config=llm_config,
-      started_at=started_at,
-      completed_at=completed_at,
-      total_population=resolved_total_population,
-      total_population_by_questionnaire=population_by_questionnaire,
-      parallel_sessions=parallel_sessions,
-    )
-    return evaluator.evaluate(execution_results, collected_errors)
+    records.sort(key=lambda record: (record.llm_id, record.population_index))
+    return RawRunResult(records=records, errors=errors)
 
   def run_sync(
     self,
-    questionnaires: Sequence[Questionnaire],
-    models: Sequence[str],
+    questionnaire: Questionnaire | None = None,
+    llm_ids: Sequence[str] | None = None,
     *,
-    llm_config: str | None = None,
+    questionnaires: Sequence[Questionnaire] | None = None,
     total_population: int | None = None,
-    parallel_sessions: int = 1,
-  ) -> BenchmarkResult:
-    """Synchronous wrapper executing the benchmark in a new event loop."""
+    output_path: Path | str | None = None,
+    questionnaire_path: Path | str | None = None,
+  ) -> RawRunResult:
+    """Synchronous wrapper executing the runner in a new event loop."""
 
     return asyncio.run(
       self.run(
-        questionnaires,
-        models,
-        llm_config=llm_config,
+        questionnaire=questionnaire,
+        llm_ids=llm_ids,
+        questionnaires=questionnaires,
         total_population=total_population,
-        parallel_sessions=parallel_sessions,
+        output_path=output_path,
+        questionnaire_path=questionnaire_path,
       )
     )
 
-  async def _execute_model(
+  def _resolve_single_questionnaire(
     self,
-    plan: ModelExecutionPlan,
-    semaphore: asyncio.Semaphore,
-  ) -> ModelRunOutcome:
-    async with semaphore:
-      results: list[ModelExecutionResult] = []
-      errors: list[RunnerError] = []
+    questionnaire: Questionnaire | None,
+    questionnaires: Sequence[Questionnaire] | None,
+  ) -> Questionnaire:
+    if questionnaire is not None and questionnaires is not None:
+      raise RunnerConfigError("Provide exactly one questionnaire")
+    if questionnaire is not None:
+      return questionnaire
+    if questionnaires is None:
+      raise RunnerConfigError("Provide exactly one questionnaire")
+    if len(questionnaires) != 1:
+      raise RunnerConfigError("Runner execution accepts exactly one questionnaire")
+    return questionnaires[0]
 
-      for questionnaire in plan.questionnaires:
-        result, questionnaire_errors = await self._execute_questionnaire(
-          plan.model,
-          questionnaire,
-        )
-        results.append(result)
-        errors.extend(questionnaire_errors)
-
-      return ModelRunOutcome(
-        model=plan.model,
-        results=results,
-        errors=errors,
-      )
-
-  async def _execute_questionnaire_bounded(
-    self,
-    model: str,
-    questionnaire: Questionnaire,
-    population_index: int,
-    semaphore: asyncio.Semaphore,
-    provider_semaphore: asyncio.Semaphore,
-  ) -> tuple[ModelExecutionResult, list[RunnerError]]:
-    async with semaphore:
-      return await self._execute_questionnaire(
-        model,
-        questionnaire,
-        population_index,
-        provider_semaphore,
-      )
+  def _validate_output_path(self, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("a", encoding="utf-8"):
+      pass
 
   async def _execute_questionnaire(
     self,
-    model: str,
+    *,
     questionnaire: Questionnaire,
-    population_index: int = 0,
-    provider_semaphore: asyncio.Semaphore | None = None,
-  ) -> tuple[ModelExecutionResult, list[RunnerError]]:
-    questionnaire_errors: list[RunnerError] = []
-    started_at = now_utc()
-    section_results = await asyncio.gather(
-      *[
-        asyncio.create_task(
-          self._execute_section(
-            model,
-            questionnaire,
-            section,
-            provider_semaphore,
-          )
+    questionnaire_path: Path | None,
+    llm_id: str,
+    population_index: int,
+    provider_semaphore: asyncio.Semaphore,
+    output_path: Path | None,
+    write_lock: asyncio.Lock,
+  ) -> RawResponseRecord:
+    section_tasks = [
+      asyncio.create_task(
+        self._execute_section(
+          questionnaire=questionnaire,
+          section=section,
+          llm_id=llm_id,
+          population_index=population_index,
+          provider_semaphore=provider_semaphore,
         )
-        for section in questionnaire.sections
-      ]
-    )
-    question_traces: list[QuestionRunTrace] = []
-    section_transcripts: dict[str, list[ConversationTurn]] = {}
-    abort_questionnaire = False
-    for section, traces, transcript, errors, aborted in section_results:
-      section_transcripts[section.name] = transcript
-      question_traces.extend(traces)
-      questionnaire_errors.extend(errors)
-      abort_questionnaire = abort_questionnaire or aborted
+      )
+      for section in questionnaire.sections
+    ]
+    section_outcomes = await asyncio.gather(*section_tasks)
 
-    completed_at = None if abort_questionnaire else now_utc()
-    result = ModelExecutionResult(
-      model=model,
-      questionnaire_id=questionnaire.id,
+    sections: list[dict[str, Any]] = []
+    errors: list[RunnerError] = []
+    query_times = []
+    for section_payload, section_errors, first_query_time in section_outcomes:
+      sections.append(section_payload)
+      errors.extend(section_errors)
+      if first_query_time is not None:
+        query_times.append(first_query_time)
+
+    query_time = min(query_times) if query_times else now_utc()
+    record = RawResponseRecord(
+      questionnaire_name=questionnaire.id,
+      questionnaire_path=questionnaire_path,
+      llm_id=llm_id,
       population_index=population_index,
-      section_transcripts=section_transcripts,
-      question_traces=question_traces,
-      started_at=started_at,
-      completed_at=completed_at,
-      errors=list(questionnaire_errors),
+      query_time=query_time,
+      response={"sections": sections},
+      errors=errors,
     )
-    return result, questionnaire_errors
+    if output_path is not None:
+      await self._append_jsonl(record, output_path, write_lock)
+    return record
 
   async def _execute_section(
     self,
-    model: str,
+    *,
     questionnaire: Questionnaire,
     section: Section,
-    provider_semaphore: asyncio.Semaphore | None,
-  ) -> tuple[
-    Section,
-    list[QuestionRunTrace],
-    list[ConversationTurn],
-    list[RunnerError],
-    bool,
-  ]:
+    llm_id: str,
+    population_index: int,
+    provider_semaphore: asyncio.Semaphore,
+  ) -> tuple[dict[str, Any], list[RunnerError], Any]:
     section_errors: list[RunnerError] = []
-    question_traces: list[QuestionRunTrace] = []
+    question_entries: list[dict[str, Any]] = []
     prior_answers: list[QuestionAnswer] = []
-    abort_section = False
+    first_query_time = None
 
     try:
       conversation = self._conversation_factory.create(
-        model,
+        llm_id,
         system_prompt=questionnaire.system_prompt,
       )
     except ConfigurationError as exc:
       error = RunnerError(
-        model=model,
+        llm_id=llm_id,
+        questionnaire_id=questionnaire.id,
+        population_index=population_index,
+        section_id=section.name,
         stage="configuration",
         message=str(exc),
-        details={
-          "questionnaire_id": questionnaire.id,
-          "section_name": section.name,
-        },
       )
-      return section, [], [], [error], True
+      section_errors.append(error)
+      return (
+        {
+          "id": section.name,
+          "questions": [
+            {
+              "id": question.id,
+              "response": None,
+              "errors": [error.to_json_dict()],
+            }
+            for question in section.questions
+          ],
+        },
+        section_errors,
+        first_query_time,
+      )
 
     for question in section.questions:
       prompt_context = PromptContext(
@@ -292,65 +269,68 @@ class BenchmarkRunner:
         prior_answers=list(prior_answers),
       )
       prompt = build_prompt(prompt_context)
-      trace = QuestionRunTrace(
-        section_name=section.name,
-        question_id=question.id,
-        prompt=prompt,
-        response=None,
-        attempts=0,
-        latency_ms=None,
-      )
-
+      question_errors: list[RunnerError] = []
       try:
-        response, latency_ms = await self._ask_question(
+        response, query_time = await self._ask_question(
           conversation,
           prompt,
           provider_semaphore,
         )
       except ValidationFailedError as exc:
-        error = RunnerError(
-          model=model,
-          stage="validation",
-          message=str(exc),
-          details={"question_id": question.id, "section_name": section.name},
+        error = self._question_error(
+          llm_id,
+          questionnaire.id,
+          population_index,
+          section.name,
+          question.id,
+          "validation",
+          str(exc),
         )
-        trace.attempts += 1
-        trace.errors.append(error)
+        response = None
+        question_errors.append(error)
         section_errors.append(error)
       except ConversationArchivedError as exc:
-        error = RunnerError(
-          model=model,
-          stage="conversation",
-          message=str(exc),
-          details={"question_id": question.id, "section_name": section.name},
+        error = self._question_error(
+          llm_id,
+          questionnaire.id,
+          population_index,
+          section.name,
+          question.id,
+          "conversation",
+          str(exc),
         )
-        trace.errors.append(error)
+        response = None
+        question_errors.append(error)
         section_errors.append(error)
-        abort_section = True
       except LLMConnectorError as exc:
-        error = RunnerError(
-          model=model,
-          stage="network",
-          message=str(exc),
-          details={"question_id": question.id, "section_name": section.name},
+        error = self._question_error(
+          llm_id,
+          questionnaire.id,
+          population_index,
+          section.name,
+          question.id,
+          "network",
+          str(exc),
         )
-        trace.errors.append(error)
+        response = None
+        question_errors.append(error)
         section_errors.append(error)
-        abort_section = True
       except Exception as exc:  # pragma: no cover - defensive
-        error = RunnerError(
-          model=model,
-          stage="unknown",
-          message=str(exc),
-          details={"question_id": question.id, "section_name": section.name},
+        error = self._question_error(
+          llm_id,
+          questionnaire.id,
+          population_index,
+          section.name,
+          question.id,
+          "runtime",
+          str(exc),
         )
-        trace.errors.append(error)
+        response = None
+        question_errors.append(error)
         section_errors.append(error)
-        abort_section = True
       else:
-        trace.response = response
-        trace.attempts += 1
-        trace.latency_ms = latency_ms
+        if first_query_time is None:
+          first_query_time = query_time
         prior_answers.append(
           QuestionAnswer(
             question_id=question.id,
@@ -359,45 +339,83 @@ class BenchmarkRunner:
           )
         )
 
-      question_traces.append(trace)
-      if abort_section:
-        break
-
-    try:
-      archive = conversation.archive()
-      transcript = archive.turns
-    except ConversationArchivedError as exc:
-      error = RunnerError(
-        model=model,
-        stage="conversation",
-        message=str(exc),
-        details={
-          "questionnaire_id": questionnaire.id,
-          "section_name": section.name,
-        },
+      question_entries.append(
+        {
+          "id": question.id,
+          "response": (
+            self._response_to_json_dict(response)
+            if response is not None
+            else None
+          ),
+          "errors": [error.to_json_dict() for error in question_errors],
+        }
       )
-      section_errors.append(error)
-      transcript = []
 
-    return section, question_traces, transcript, section_errors, abort_section
+    return (
+      {"id": section.name, "questions": question_entries},
+      section_errors,
+      first_query_time,
+    )
+
+  def _question_error(
+    self,
+    llm_id: str,
+    questionnaire_id: str,
+    population_index: int,
+    section_id: str,
+    question_id: str,
+    stage: str,
+    message: str,
+  ) -> RunnerError:
+    return RunnerError(
+      llm_id=llm_id,
+      questionnaire_id=questionnaire_id,
+      population_index=population_index,
+      section_id=section_id,
+      question_id=question_id,
+      stage=stage,
+      message=message,
+    )
 
   async def _ask_question(
     self,
     conversation: LLMConversation,
     prompt: str,
-    provider_semaphore: asyncio.Semaphore | None = None,
-  ):
-    """Call the underlying conversation in a worker thread."""
-
-    start_time = time.perf_counter()
-    if provider_semaphore is None:
+    provider_semaphore: asyncio.Semaphore,
+  ) -> tuple[LLMResponse, Any]:
+    async with provider_semaphore:
+      query_time = now_utc()
       response = await asyncio.to_thread(conversation.ask, prompt)
-    else:
-      async with provider_semaphore:
-        response = await asyncio.to_thread(conversation.ask, prompt)
-    latency_seconds = time.perf_counter() - start_time
-    latency_ms = int(latency_seconds * 1000)
-    return response, latency_ms
+    return response, query_time
+
+  def _response_to_json_dict(self, response: LLMResponse) -> dict[str, Any]:
+    return {
+      "raw": response.text,
+      "parsed": response.parsed,
+      "metadata": {
+        "provider": response.provider,
+        "model": response.model,
+        **response.metadata,
+      },
+    }
+
+  async def _append_jsonl(
+    self,
+    record: RawResponseRecord,
+    output_path: Path,
+    write_lock: asyncio.Lock,
+  ) -> None:
+    line = json.dumps(record.to_json_dict(), ensure_ascii=False)
+    async with write_lock:
+      await asyncio.to_thread(
+        self._append_line,
+        output_path,
+        line,
+      )
+
+  def _append_line(self, output_path: Path, line: str) -> None:
+    with output_path.open("a", encoding="utf-8") as handle:
+      handle.write(line + "\n")
 
 
 __all__ = ["BenchmarkRunner", "RunnerConfigError"]

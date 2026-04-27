@@ -48,30 +48,15 @@ def runner() -> CliRunner:
   return CliRunner()
 
 
-def _extract_json_payload(text: str) -> dict[str, object]:
-  lines = text.splitlines()
-  captured: list[str] = []
-  inside = False
-  depth = 0
-
-  for line in lines:
-    stripped = line.strip()
-    if not inside:
-      if stripped == "{":
-        inside = True
-        depth = 1
-        captured.append(line)
+def _jsonl_records(text: str) -> list[dict[str, object]]:
+  records = []
+  for line in text.splitlines():
+    if not line.strip().startswith("{"):
       continue
-    depth += stripped.count("{")
-    depth -= stripped.count("}")
-    captured.append(line)
-    if depth == 0:
-      break
-
-  payload = "\n".join(captured)
-  if not payload:
-    raise AssertionError("JSON payload not found in CLI output")
-  return json.loads(payload)
+    payload = json.loads(line)
+    if "llm_id" in payload and "response" in payload:
+      records.append(payload)
+  return records
 
 
 def _write_questionnaire(root: Path, name: str) -> None:
@@ -142,7 +127,7 @@ def test_list_questionnaires_outputs_available_names(
   assert "sample" in result.output
 
 
-def test_run_benchmark_emits_json_and_summary(
+def test_run_benchmark_emits_jsonl_and_summary(
   tmp_path: Path,
   runner: CliRunner,
   monkeypatch: pytest.MonkeyPatch,
@@ -162,13 +147,13 @@ def test_run_benchmark_emits_json_and_summary(
     ],
   )
   assert result.exit_code == 0
-  payload = _extract_json_payload(result.output)
-  assert payload["info"]["questionnaires"] == ["sample"]
-  assert payload["info"]["total_population"] == 3
-  assert payload["info"]["total_population_by_questionnaire"] == {"sample": 3}
-  assert payload["summary"]["total_questions"] == 1
-  assert payload["summary"]["models_tested"] == 1
-  assert "Benchmark Summary" in result.output
+  records = _jsonl_records(result.output)
+  assert len(records) == 3
+  assert {record["population_index"] for record in records} == {0, 1, 2}
+  assert all(record["questionnaire"]["name"] == "sample" for record in records)
+  assert all(record["llm_id"] == "openai/stub-model" for record in records)
+  assert records[0]["response"]["sections"][0]["questions"][0]["id"] == "q1"
+  assert "Run Summary" in result.output
 
 
 def test_total_population_option_overrides_questionnaire_default(
@@ -188,16 +173,64 @@ def test_total_population_option_overrides_questionnaire_default(
       "sample",
       "--total-population",
       "2",
-      "--parallel-sessions",
-      "1",
       "--max-concurrency",
       "1",
     ],
   )
   assert result.exit_code == 0
-  payload = _extract_json_payload(result.output)
-  assert payload["info"]["total_population"] == 2
-  assert payload["info"]["total_population_by_questionnaire"] == {"sample": 2}
+  records = _jsonl_records(result.output)
+  assert len(records) == 2
+  assert {record["population_index"] for record in records} == {0, 1}
+
+
+def test_output_option_writes_jsonl_file(
+  tmp_path: Path,
+  runner: CliRunner,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _write_questionnaire(tmp_path, "sample")
+  _write_llm_config(tmp_path)
+  output_path = tmp_path / "responses.jsonl"
+  monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
+  result = runner.invoke(
+    main,
+    [
+      "--config-dir",
+      str(tmp_path),
+      "--questionnaire",
+      "sample",
+      "--total-population",
+      "1",
+      "--output",
+      str(output_path),
+    ],
+  )
+  assert result.exit_code == 0
+  assert _jsonl_records(result.output) == []
+  records = _jsonl_records(output_path.read_text(encoding="utf-8"))
+  assert len(records) == 1
+  assert records[0]["questionnaire"]["name"] == "sample"
+
+
+def test_parallel_sessions_option_is_not_supported(
+  tmp_path: Path,
+  runner: CliRunner,
+) -> None:
+  _write_questionnaire(tmp_path, "sample")
+  _write_llm_config(tmp_path)
+  result = runner.invoke(
+    main,
+    [
+      "--config-dir",
+      str(tmp_path),
+      "--questionnaire",
+      "sample",
+      "--parallel-sessions",
+      "1",
+    ],
+  )
+  assert result.exit_code == 2
+  assert "No such option" in result.output
 
 
 def test_missing_questionnaire_returns_exit_code_two(

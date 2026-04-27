@@ -6,9 +6,7 @@ import json
 import logging
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import Any
 
 import click
 import structlog
@@ -28,14 +26,15 @@ from rationale_benchmark.questionnaire import (
   load_multiple,
 )
 from rationale_benchmark.runner import (
-  BenchmarkResult,
   BenchmarkRunner,
+  RawResponseRecord,
+  RawRunResult,
   RunnerConfigError,
 )
 
 DEFAULT_CONFIG_DIR = Path("./config")
 DEFAULT_LLM_CONFIG = "default-llms"
-DEFAULT_MAX_CONCURRENCY = 4
+DEFAULT_MAX_CONCURRENCY = 5
 
 
 class CliConfigurationError(click.ClickException):
@@ -187,87 +186,48 @@ def select_models(
   return selected
 
 
-def serialize_benchmark_result(result: BenchmarkResult) -> dict[str, Any]:
-  """Convert a :class:`BenchmarkResult` into a JSON-serialisable mapping."""
-  return _to_serialisable(result)
-
-
-def _to_serialisable(value: Any) -> Any:
-  if value is None:
-    return None
-  if isinstance(value, (str, int, float, bool)):
-    return value
-  if isinstance(value, Path):
-    return str(value)
-  if hasattr(value, "isoformat"):
-    try:
-      return value.isoformat()  # datetime compatible
-    except Exception:  # pragma: no cover - defensive
-      pass
-  if hasattr(value, "to_dict"):
-    return _to_serialisable(value.to_dict())
-  if is_dataclass(value):
-    result: dict[str, Any] = {}
-    for field in fields(value):
-      result[field.name] = _to_serialisable(getattr(value, field.name))
-    return result
-  if isinstance(value, Mapping):
-    return {str(key): _to_serialisable(val) for key, val in value.items()}
-  if isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray)):
-    return [_to_serialisable(item) for item in value]
-  return value
-
-
-def render_summary(result: BenchmarkResult) -> str:
+def render_summary(result: RawRunResult) -> str:
   """Render a concise textual summary for stderr."""
-  questionnaire_list = ", ".join(result.info.questionnaires) or "none"
-  model_lines = []
-  summary = result.summary
-  for model in result.info.models_tested:
-    average = summary.average_scores_by_model.get(model, 0.0)
-    model_lines.append(f"- {model}: {average:.2%} avg score")
+  questionnaire_names = sorted(
+    {record.questionnaire_name for record in result.records}
+  )
+  llm_ids = sorted({record.llm_id for record in result.records})
   warnings = []
   if result.errors:
-    warnings.append(
-      f"- Encountered {len(result.errors)} execution or scoring warnings."
-    )
+    warnings.append(f"- Encountered {len(result.errors)} runner warnings.")
   return "\n".join(
     [
-      "Benchmark Summary",
-      f"Questionnaires: {questionnaire_list}",
-      f"Models tested: {', '.join(result.info.models_tested) or 'none'}",
-      f"Total questions: {summary.total_questions}",
-      "Model performance:",
-      *model_lines,
+      "Run Summary",
+      f"Questionnaires: {', '.join(questionnaire_names) or 'none'}",
+      f"LLMs tested: {', '.join(llm_ids) or 'none'}",
+      f"Records written: {len(result.records)}",
       *(["Warnings:"] + warnings if warnings else []),
     ]
   )
 
 
 def write_output(
-  result: BenchmarkResult,
+  result: RawRunResult,
   *,
   output_path: str | None,
 ) -> None:
-  """Write JSON output to stdout or a file."""
-  payload = json.dumps(
-    serialize_benchmark_result(result),
-    indent=2,
-    ensure_ascii=False,
+  """Write raw JSONL output to stdout or report the runner-written file."""
+  payload = "\n".join(
+    json.dumps(record.to_json_dict(), ensure_ascii=False)
+    for record in result.records
   )
   if output_path:
     destination = Path(output_path)
-    destination.write_text(payload + "\n", encoding="utf-8")
     click.echo(
       (
-        f"Benchmark results written to {destination} "
-        f"(questionnaires={len(result.info.questionnaires)}, "
-        f"models={len(result.info.models_tested)})"
+        f"Raw responses written to {destination} "
+        f"(records={len(result.records)})"
       ),
       err=True,
     )
     return
-  click.echo(payload)
+  if payload:
+    click.echo(payload)
 
 
 def execute_benchmark(
@@ -275,23 +235,39 @@ def execute_benchmark(
   *,
   configs: Mapping[str, LLMConnectorConfig],
   models: list[str],
-  llm_config: str | None,
   max_concurrency: int,
   total_population: int | None = None,
-  parallel_sessions: int = 1,
-) -> BenchmarkResult:
+  questionnaire_paths: Mapping[str, Path] | None = None,
+  output_path: str | None = None,
+) -> RawRunResult:
   """Run the benchmark runner synchronously."""
   factory = ConversationFactory(configs)
   runner = BenchmarkRunner(
     factory,
     max_concurrency=max_concurrency,
   )
-  return runner.run_sync(
-    questionnaires,
-    models,
-    llm_config=llm_config,
-    total_population=total_population,
-    parallel_sessions=parallel_sessions,
+  destination = Path(output_path) if output_path else None
+  if destination is not None:
+    destination.write_text("", encoding="utf-8")
+  records: list[RawResponseRecord] = []
+  errors = []
+  for questionnaire in questionnaires:
+    result = runner.run_sync(
+      questionnaire=questionnaire,
+      llm_ids=models,
+      total_population=total_population,
+      questionnaire_path=(
+        questionnaire_paths.get(questionnaire.id)
+        if questionnaire_paths is not None
+        else None
+      ),
+      output_path=destination,
+    )
+    records.extend(result.records)
+    errors.extend(result.errors)
+  return RawRunResult(
+    records=records,
+    errors=errors,
   )
 
 
@@ -317,7 +293,7 @@ def execute_benchmark(
 @click.option(
   "--output",
   type=click.Path(),
-  help="Optional path for JSON results (defaults to stdout).",
+  help="Optional path for JSONL responses (defaults to stdout).",
 )
 @click.option(
   "--list-questionnaires",
@@ -343,7 +319,7 @@ def execute_benchmark(
   type=click.INT,
   default=DEFAULT_MAX_CONCURRENCY,
   show_default=True,
-  help="Maximum number of concurrent model executions.",
+  help="Maximum number of concurrent provider calls.",
 )
 @click.option(
   "--total-population",
@@ -353,13 +329,6 @@ def execute_benchmark(
     "Positive override for independent LLM completions per questionnaire. "
     "Defaults to questionnaire metadata."
   ),
-)
-@click.option(
-  "--parallel-sessions",
-  type=click.INT,
-  default=1,
-  show_default=True,
-  help="Maximum concurrent LLM sessions when running in population mode.",
 )
 @click.option(
   "--verbose",
@@ -377,7 +346,6 @@ def main(
   config_dir: str,
   max_concurrency: int,
   total_population: int | None,
-  parallel_sessions: int,
   verbose: bool,
 ) -> None:
   """Rationale Benchmark for Large Language Models."""
@@ -391,12 +359,6 @@ def main(
       "--total-population must be >= 1",
       param_hint="--total-population",
     )
-  if parallel_sessions < 1:
-    raise click.BadParameter(
-      "--parallel-sessions must be >= 1",
-      param_hint="--parallel-sessions",
-    )
-
   configure_logging(verbose)
   logger = structlog.get_logger(__name__)
 
@@ -462,7 +424,7 @@ def main(
       if total_population is not None
       else max(q.default_population for q in questionnaire_objects)
     ),
-    parallel_sessions=parallel_sessions,
+    max_concurrency=max_concurrency,
   )
 
   try:
@@ -470,10 +432,13 @@ def main(
       questionnaire_objects,
       configs=configs,
       models=selected_models,
-      llm_config=llm_config,
       max_concurrency=max_concurrency,
       total_population=total_population,
-      parallel_sessions=parallel_sessions,
+      questionnaire_paths={
+        loaded.id: config_root / "questionnaires" / f"{selected}.yaml"
+        for selected, loaded in zip(selected_questionnaires, questionnaire_objects)
+      },
+      output_path=output,
     )
   except RunnerConfigError as exc:
     raise click.ClickException(str(exc)) from exc
@@ -485,6 +450,7 @@ def main(
     "benchmark.complete",
     questionnaires=selected_questionnaires,
     models=selected_models,
+    records=len(result.records),
     errors=len(result.errors),
   )
 

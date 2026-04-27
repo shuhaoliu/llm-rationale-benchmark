@@ -1,40 +1,28 @@
-"""Runner package orchestrating benchmark execution and evaluation."""
+"""Runner package orchestrating raw questionnaire execution."""
 
-from .evaluator import BenchmarkEvaluator
 from .executor import BenchmarkRunner, RunnerConfigError
 from .prompts import build_prompt
 from .types import (
-  BenchmarkInfo,
-  BenchmarkResult,
-  BenchmarkSummary,
-  ModelBenchmarkResult,
-  ModelExecutionResult,
-  PopulationResult,
   PromptContext,
-  QuestionResult,
+  QuestionAnswer,
   QuestionRunTrace,
-  QuestionnaireScore,
+  RawResponseRecord,
+  RawRunResult,
   RunnerError,
-  SectionScore,
+  RunnerExecutionPlan,
   now_utc,
 )
 
 __all__ = [
-  "BenchmarkEvaluator",
   "BenchmarkRunner",
-  "BenchmarkInfo",
-  "BenchmarkResult",
-  "BenchmarkSummary",
-  "ModelBenchmarkResult",
-  "ModelExecutionResult",
-  "PopulationResult",
   "PromptContext",
-  "QuestionResult",
+  "QuestionAnswer",
   "QuestionRunTrace",
-  "QuestionnaireScore",
+  "RawResponseRecord",
+  "RawRunResult",
   "RunnerError",
   "RunnerConfigError",
-  "SectionScore",
+  "RunnerExecutionPlan",
   "build_prompt",
   "now_utc",
 ]
