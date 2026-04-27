@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from rationale_benchmark.llm.conversation import ConversationTurn, LLMResponse
 from rationale_benchmark.questionnaire.models import Question, QuestionScore
@@ -18,7 +18,7 @@ class RunnerError:
   stage: str
   message: str
   details: dict[str, Any] = field(default_factory=dict)
-  retry_count: Optional[int] = None
+  retry_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -27,20 +27,31 @@ class PromptContext:
 
   questionnaire_id: str
   section_name: str
-  section_instructions: Optional[str]
+  section_instructions: str | None
   question: Question
-  system_prompt: Optional[str]
+  system_prompt: str | None
+  prior_answers: list[QuestionAnswer] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class QuestionAnswer:
+  """Question-answer pair available as in-section context."""
+
+  question_id: str
+  prompt: str
+  response_text: str
 
 
 @dataclass
 class QuestionRunTrace:
   """Execution trace for a single questionnaire question."""
 
+  section_name: str
   question_id: str
   prompt: str
-  response: Optional[LLMResponse]
+  response: LLMResponse | None
   attempts: int
-  latency_ms: Optional[int]
+  latency_ms: int | None
   errors: list[RunnerError] = field(default_factory=list)
 
 
@@ -50,11 +61,21 @@ class ModelExecutionResult:
 
   model: str
   questionnaire_id: str
-  transcript: list[ConversationTurn]
+  population_index: int
+  section_transcripts: dict[str, list[ConversationTurn]]
   question_traces: list[QuestionRunTrace]
   started_at: datetime
-  completed_at: Optional[datetime]
+  completed_at: datetime | None
   errors: list[RunnerError] = field(default_factory=list)
+
+  @property
+  def transcript(self) -> list[ConversationTurn]:
+    """Return flattened section transcripts for backward-compatible consumers."""
+
+    turns: list[ConversationTurn] = []
+    for transcript in self.section_transcripts.values():
+      turns.extend(transcript)
+    return turns
 
 
 @dataclass(frozen=True)
@@ -63,10 +84,11 @@ class BenchmarkInfo:
 
   questionnaires: tuple[str, ...]
   models_tested: tuple[str, ...]
-  llm_config: Optional[str]
+  llm_config: str | None
   started_at: datetime
   completed_at: datetime
   total_population: int = 1
+  total_population_by_questionnaire: dict[str, int] = field(default_factory=dict)
   parallel_sessions: int = 1
 
 
@@ -75,10 +97,12 @@ class QuestionResult:
   """Evaluation result for an answered question."""
 
   questionnaire_id: str
+  section_name: str
   model: str
+  population_index: int
   question_id: str
   response_text: str
-  reasoning: Optional[str]
+  reasoning: str | None
   score: QuestionScore
   latency_ms: int
   metadata: dict[str, Any] = field(default_factory=dict)
@@ -122,11 +146,21 @@ class ModelBenchmarkResult:
   """Evaluation outputs for a specific model."""
 
   model: str
+  population_index: int
   questionnaire_scores: list[QuestionnaireScore]
   questions: list[QuestionResult]
-  transcript: list[ConversationTurn]
+  section_transcripts: dict[str, list[ConversationTurn]]
   errors: list[RunnerError] = field(default_factory=list)
   cost_estimate: float = 0.0
+
+  @property
+  def transcript(self) -> list[ConversationTurn]:
+    """Return flattened section transcripts for backward-compatible consumers."""
+
+    turns: list[ConversationTurn] = []
+    for transcript in self.section_transcripts.values():
+      turns.extend(transcript)
+    return turns
 
 
 @dataclass
@@ -134,6 +168,7 @@ class BenchmarkSummary:
   """Cross-model summary statistics."""
 
   questionnaires_run: int
+  total_population: int
   total_questions: int
   models_tested: int
   average_scores_by_questionnaire: dict[str, float]
@@ -177,6 +212,7 @@ __all__ = [
   "ModelExecutionResult",
   "PopulationResult",
   "PromptContext",
+  "QuestionAnswer",
   "QuestionResult",
   "QuestionRunTrace",
   "QuestionnaireScore",

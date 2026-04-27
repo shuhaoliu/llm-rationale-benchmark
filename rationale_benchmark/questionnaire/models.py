@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class QuestionType(str, Enum):
@@ -47,7 +48,8 @@ class Questionnaire:
   name: str
   description: str | None
   version: int | None
-  metadata: dict[str, str]
+  metadata: dict[str, Any]
+  default_population: int
   system_prompt: str
   sections: list[Section]
 

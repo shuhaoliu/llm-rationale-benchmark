@@ -26,6 +26,8 @@ def test_cli_validates_file(tmp_path: Path) -> None:
       id: "sample"
       name: "Sample"
       system_prompt: "You answer using short sentences."
+      metadata:
+        default_population: 1
       sections:
         - name: "One"
           questions:
@@ -54,6 +56,8 @@ def test_cli_supports_json_output(tmp_path: Path) -> None:
       id: "json-sample"
       name: "Sample"
       system_prompt: "You answer using short sentences."
+      metadata:
+        default_population: 1
       sections:
         - name: "One"
           questions:
@@ -84,6 +88,8 @@ def test_cli_reports_validation_errors(tmp_path: Path) -> None:
       id: "invalid"
       name: "Broken"
       system_prompt: "You answer using short sentences."
+      metadata:
+        default_population: 1
       sections:
         - name: "One"
           questions:

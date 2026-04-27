@@ -29,6 +29,7 @@ class StubConversationFactory:
     self._responses_by_model = {
       model: list(responses) for model, responses in responses_by_model.items()
     }
+    self.created_system_prompts: list[str | None] = []
 
   def create(
     self,
@@ -39,6 +40,7 @@ class StubConversationFactory:
     if model not in self._responses_by_model:
       raise ConfigurationError(f"Unknown model '{model}'", config_file=None)
 
+    self.created_system_prompts.append(system_prompt)
     responses = list(self._responses_by_model[model])
     config = LLMConnectorConfig(
       provider=ProviderType.OPENAI,
@@ -86,9 +88,54 @@ def build_questionnaire() -> Questionnaire:
     name="Test Questionnaire",
     description=None,
     version=1,
-    metadata={},
+    metadata={"default_population": 1},
+    default_population=1,
     system_prompt="System prompt",
     sections=[section],
+  )
+
+
+def build_two_section_questionnaire() -> Questionnaire:
+  first_question = Question(
+    id="first-1",
+    type=QuestionType.RATING_5,
+    prompt="First section question.",
+    options=None,
+    scoring=ScoringRule(
+      total=5,
+      weights={str(value): value for value in range(1, 6)},
+    ),
+  )
+  second_question = Question(
+    id="second-1",
+    type=QuestionType.RATING_5,
+    prompt="Second section question.",
+    options=None,
+    scoring=ScoringRule(
+      total=5,
+      weights={str(value): value for value in range(1, 6)},
+    ),
+  )
+  return Questionnaire(
+    id="two-section",
+    name="Two Section Questionnaire",
+    description=None,
+    version=1,
+    metadata={"default_population": 1},
+    default_population=1,
+    system_prompt="System prompt",
+    sections=[
+      Section(
+        name="First",
+        instructions=None,
+        questions=[first_question],
+      ),
+      Section(
+        name="Second",
+        instructions=None,
+        questions=[second_question],
+      ),
+    ],
   )
 
 
@@ -147,6 +194,38 @@ def test_benchmark_runner_successful_run():
   )
   assert summary.average_scores_by_model["openai/gpt-4"] == pytest.approx(1.0)
   assert summary.cost_estimates["openai/gpt-4"] == pytest.approx(0.0)
+
+
+def test_sections_use_independent_conversation_contexts():
+  questionnaire = build_two_section_questionnaire()
+  factory = StubConversationFactory(
+    {"openai/gpt-4": [json.dumps({"answer": 5})]},
+  )
+  runner = BenchmarkRunner(factory, max_concurrency=2)
+
+  result = runner.run_sync(
+    questionnaires=[questionnaire],
+    models=["openai/gpt-4"],
+  )
+
+  assert factory.created_system_prompts == ["System prompt", "System prompt"]
+  model_result = result.model_results[0]
+  first_transcript = model_result.section_transcripts["First"]
+  second_transcript = model_result.section_transcripts["Second"]
+  assert [turn.content for turn in first_transcript if turn.role == "user"] == [
+    "First section question."
+  ]
+  assert [turn.content for turn in second_transcript if turn.role == "user"] == [
+    "Second section question."
+  ]
+  assert all(
+    "Second section question." not in turn.content
+    for turn in first_transcript
+  )
+  assert all(
+    "First section question." not in turn.content
+    for turn in second_transcript
+  )
 
 
 def test_benchmark_runner_handles_configuration_error():

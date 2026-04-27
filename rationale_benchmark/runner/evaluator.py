@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Sequence
+from collections.abc import Sequence
 
 from rationale_benchmark.llm.conversation import ConversationTurn, LLMResponse
 from rationale_benchmark.questionnaire.errors import (
   AnswerValidationError,
   QuestionnaireConfigError,
 )
-from rationale_benchmark.questionnaire.models import Question, Questionnaire, QuestionScore
+from rationale_benchmark.questionnaire.models import (
+  Question,
+  Questionnaire,
+  QuestionScore,
+)
 from rationale_benchmark.questionnaire.scoring import score_question, validate_answer
 from rationale_benchmark.runner.types import (
   BenchmarkInfo,
@@ -39,6 +43,7 @@ class BenchmarkEvaluator:
     started_at,
     completed_at,
     total_population: int = 1,
+    total_population_by_questionnaire: dict[str, int] | None = None,
     parallel_sessions: int = 1,
   ) -> None:
     self._questionnaires = {q.id: q for q in questionnaires}
@@ -48,6 +53,11 @@ class BenchmarkEvaluator:
     self._started_at = started_at
     self._completed_at = completed_at
     self._total_population = total_population
+    self._total_population_by_questionnaire = (
+      dict(total_population_by_questionnaire)
+      if total_population_by_questionnaire is not None
+      else {q.id: total_population for q in questionnaires}
+    )
     self._parallel_sessions = parallel_sessions
 
   def evaluate(
@@ -68,7 +78,7 @@ class BenchmarkEvaluator:
       qid: [] for qid in self._questionnaires
     }
     model_totals: dict[str, list[tuple[int, int]]] = {model: [] for model in self._models}
-    cost_estimates: dict[str, float] = {model: 0.0 for model in self._models}
+    cost_estimates: dict[str, float] = dict.fromkeys(self._models, 0.0)
 
     model_results: list[ModelBenchmarkResult] = []
     scoring_errors: list[RunnerError] = []
@@ -77,13 +87,15 @@ class BenchmarkEvaluator:
       model_execution_results = grouped.get(model, [])
       model_questionnaire_scores: list[QuestionnaireScore] = []
       model_questions: list[QuestionResult] = []
-      model_transcript: list[ConversationTurn] = []
+      model_section_transcripts: dict[str, list[ConversationTurn]] = {}
       model_errors: list[RunnerError] = []
+      model_population_index = 0
 
       for execution_result in model_execution_results:
         questionnaire = self._questionnaires.get(execution_result.questionnaire_id)
         if questionnaire is None:
           continue
+        model_population_index = execution_result.population_index
 
         trace_lookup = {
           trace.question_id: trace for trace in execution_result.question_traces
@@ -97,7 +109,9 @@ class BenchmarkEvaluator:
             trace = trace_lookup.get(question.id)
             result, score, errors = self._score_question(
               questionnaire.id,
+              section.name,
               model,
+              execution_result.population_index,
               question,
               trace,
             )
@@ -132,15 +146,24 @@ class BenchmarkEvaluator:
         model_totals.setdefault(model, []).append(
           (questionnaire_score.awarded, questionnaire_score.total)
         )
-        model_transcript.extend(execution_result.transcript)
+        for section_name, transcript in execution_result.section_transcripts.items():
+          key = section_name
+          if key in model_section_transcripts:
+            key = (
+              f"{execution_result.questionnaire_id}:"
+              f"{execution_result.population_index}:"
+              f"{section_name}"
+            )
+          model_section_transcripts[key] = transcript
         model_errors.extend(execution_result.errors)
 
       model_results.append(
         ModelBenchmarkResult(
           model=model,
+          population_index=model_population_index,
           questionnaire_scores=model_questionnaire_scores,
           questions=model_questions,
-          transcript=model_transcript,
+          section_transcripts=model_section_transcripts,
           errors=model_errors,
           cost_estimate=cost_estimates.get(model, 0.0),
         )
@@ -170,6 +193,7 @@ class BenchmarkEvaluator:
 
     summary = BenchmarkSummary(
       questionnaires_run=questionnaires_run,
+      total_population=sum(self._total_population_by_questionnaire.values()),
       total_questions=total_questions,
       models_tested=models_tested,
       average_scores_by_questionnaire=average_scores_by_questionnaire,
@@ -184,6 +208,7 @@ class BenchmarkEvaluator:
       started_at=self._started_at,
       completed_at=self._completed_at,
       total_population=self._total_population,
+      total_population_by_questionnaire=self._total_population_by_questionnaire,
       parallel_sessions=self._parallel_sessions,
     )
 
@@ -200,7 +225,10 @@ class BenchmarkEvaluator:
             PopulationResult(
               questionnaire_id=qid,
               model=model_result.model,
-              total_population=self._total_population,
+              total_population=self._total_population_by_questionnaire.get(
+                qid,
+                self._total_population,
+              ),
               parallel_sessions=self._parallel_sessions,
               sessions=sessions,
             )
@@ -217,7 +245,9 @@ class BenchmarkEvaluator:
   def _score_question(
     self,
     questionnaire_id: str,
+    section_name: str,
     model: str,
+    population_index: int,
     question: Question,
     trace: QuestionRunTrace | None,
   ) -> tuple[QuestionResult, QuestionScore, list[RunnerError]]:
@@ -285,7 +315,9 @@ class BenchmarkEvaluator:
 
     question_result = QuestionResult(
       questionnaire_id=questionnaire_id,
+      section_name=section_name,
       model=model,
+      population_index=population_index,
       question_id=question.id,
       response_text=response_text,
       reasoning=reasoning,

@@ -33,7 +33,7 @@ class QuestionnaireSchema(BaseModel):
   name: str
   description: str | None = None
   version: int | None = None
-  metadata: dict[str, str] | None = Field(default=None)
+  metadata: dict[str, str | int]
   system_prompt: str = Field(..., min_length=1)
   sections: list[SectionSchema] = Field(..., min_length=1)
 

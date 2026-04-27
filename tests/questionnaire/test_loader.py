@@ -37,6 +37,7 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
       version: 1
       system_prompt: "You are a careful assistant helping with burnout surveys."
       metadata:
+        default_population: 5
         author: "Psych Lab"
       sections:
         - name: "Workload"
@@ -63,7 +64,11 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
   )
   questionnaire = load_questionnaire("burnout", questionnaire_dir.parent)
   assert questionnaire.id == "burnout"
-  assert questionnaire.metadata == {"author": "Psych Lab"}
+  assert questionnaire.default_population == 5
+  assert questionnaire.metadata == {
+    "default_population": 5,
+    "author": "Psych Lab",
+  }
   assert (
     questionnaire.system_prompt
     == "You are a careful assistant helping with burnout surveys."
@@ -92,6 +97,8 @@ def test_missing_system_prompt_raises(questionnaire_dir: Path) -> None:
     questionnaire:
       id: "no-system"
       name: "No System Prompt"
+      metadata:
+        default_population: 1
       sections:
         - name: "Only"
           questions:
@@ -108,6 +115,60 @@ def test_missing_system_prompt_raises(questionnaire_dir: Path) -> None:
   assert error.value.location == "questionnaire.system_prompt"
 
 
+def test_missing_default_population_raises(questionnaire_dir: Path) -> None:
+  _write_yaml(
+    questionnaire_dir,
+    "no-population",
+    """
+    questionnaire:
+      id: "no-population"
+      name: "No Population"
+      system_prompt: "You answer using short sentences."
+      metadata:
+        author: "Psych Lab"
+      sections:
+        - name: "Only"
+          questions:
+            - id: "q1"
+              type: "rating-5"
+              prompt: "Prompt"
+              scoring:
+                total: 5
+                weights: [0, 1, 2, 3, 4]
+    """,
+  )
+  with pytest.raises(QuestionnaireConfigError) as error:
+    load_questionnaire("no-population", questionnaire_dir.parent)
+  assert error.value.location == "questionnaire.metadata.default_population"
+
+
+def test_non_positive_default_population_raises(questionnaire_dir: Path) -> None:
+  _write_yaml(
+    questionnaire_dir,
+    "bad-population",
+    """
+    questionnaire:
+      id: "bad-population"
+      name: "Bad Population"
+      system_prompt: "You answer using short sentences."
+      metadata:
+        default_population: 0
+      sections:
+        - name: "Only"
+          questions:
+            - id: "q1"
+              type: "rating-5"
+              prompt: "Prompt"
+              scoring:
+                total: 5
+                weights: [0, 1, 2, 3, 4]
+    """,
+  )
+  with pytest.raises(QuestionnaireConfigError) as error:
+    load_questionnaire("bad-population", questionnaire_dir.parent)
+  assert error.value.location == "questionnaire.metadata.default_population"
+
+
 def test_duplicate_question_id_raises(questionnaire_dir: Path) -> None:
   _write_yaml(
     questionnaire_dir,
@@ -117,6 +178,8 @@ def test_duplicate_question_id_raises(questionnaire_dir: Path) -> None:
       id: "dup-question"
       name: "Dup"
       system_prompt: "You default to structured survey guidance."
+      metadata:
+        default_population: 1
       sections:
         - name: "Workload"
           questions:
@@ -153,6 +216,8 @@ def test_choice_weights_mismatch_raises(questionnaire_dir: Path) -> None:
       id: "bad-choice"
       name: "Bad"
       system_prompt: "Provide structured answers."
+      metadata:
+        default_population: 1
       sections:
         - name: "Workload"
           questions:
@@ -182,6 +247,8 @@ def test_list_questionnaires_returns_file_stems(questionnaire_dir: Path) -> None
       id: "first"
       name: "First"
       system_prompt: "Stay neutral."
+      metadata:
+        default_population: 1
       sections:
         - name: "Only"
           questions:
@@ -201,6 +268,8 @@ def test_list_questionnaires_returns_file_stems(questionnaire_dir: Path) -> None
       id: "second"
       name: "Second"
       system_prompt: "Stay neutral."
+      metadata:
+        default_population: 1
       sections:
         - name: "Only"
           questions:

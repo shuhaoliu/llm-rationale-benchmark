@@ -86,6 +86,8 @@ def _write_questionnaire(root: Path, name: str) -> None:
         name: "Sample Questionnaire"
         description: "Test questionnaire"
         system_prompt: "Answer carefully."
+        metadata:
+          default_population: 3
         sections:
           - name: "Section"
             instructions: "Rate the statements."
@@ -162,9 +164,40 @@ def test_run_benchmark_emits_json_and_summary(
   assert result.exit_code == 0
   payload = _extract_json_payload(result.output)
   assert payload["info"]["questionnaires"] == ["sample"]
+  assert payload["info"]["total_population"] == 3
+  assert payload["info"]["total_population_by_questionnaire"] == {"sample": 3}
   assert payload["summary"]["total_questions"] == 1
   assert payload["summary"]["models_tested"] == 1
   assert "Benchmark Summary" in result.output
+
+
+def test_total_population_option_overrides_questionnaire_default(
+  tmp_path: Path,
+  runner: CliRunner,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _write_questionnaire(tmp_path, "sample")
+  _write_llm_config(tmp_path)
+  monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
+  result = runner.invoke(
+    main,
+    [
+      "--config-dir",
+      str(tmp_path),
+      "--questionnaire",
+      "sample",
+      "--total-population",
+      "2",
+      "--parallel-sessions",
+      "1",
+      "--max-concurrency",
+      "1",
+    ],
+  )
+  assert result.exit_code == 0
+  payload = _extract_json_payload(result.output)
+  assert payload["info"]["total_population"] == 2
+  assert payload["info"]["total_population_by_questionnaire"] == {"sample": 2}
 
 
 def test_missing_questionnaire_returns_exit_code_two(

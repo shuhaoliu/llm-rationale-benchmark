@@ -7,6 +7,7 @@ questionnaire:
     You are an impartial research assistant administering a risk propensity survey.
     Present each question exactly as written and avoid adding commentary.
   metadata:
+    default_population: 1
     author: "Benchmark Curation Team"
     source: "Adapted from provided reference image for risk propensity prompt."
     scale: "1=Strongly disagree, 2=Disagree, 3=Somewhat disagree, 4=Neutral, 5=Somewhat agree, 6=Agree, 7=Strongly agree"

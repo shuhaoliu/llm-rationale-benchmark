@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -125,7 +126,8 @@ def _build_questionnaire(
   schema: QuestionnaireSchema,
   path: Path,
 ) -> Questionnaire:
-  metadata = dict(schema.metadata) if schema.metadata else {}
+  metadata = dict(schema.metadata)
+  default_population = _extract_default_population(metadata, path)
   sections = _build_sections(schema.sections, path)
   return Questionnaire(
     id=schema.id,
@@ -133,9 +135,22 @@ def _build_questionnaire(
     description=schema.description,
     version=schema.version,
     metadata=metadata,
+    default_population=default_population,
     system_prompt=schema.system_prompt,
     sections=sections,
   )
+
+
+def _extract_default_population(metadata: dict[str, object], path: Path) -> int:
+  location = "questionnaire.metadata.default_population"
+  value = metadata.get("default_population")
+  if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+    raise QuestionnaireConfigError(
+      "metadata.default_population must be a positive integer",
+      file_path=str(path),
+      location=location,
+    )
+  return value
 
 
 def _build_sections(sections: list[SectionSchema], path: Path) -> list[Section]:

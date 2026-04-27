@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Iterable, Mapping
 from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 import click
 import structlog
@@ -31,7 +32,6 @@ from rationale_benchmark.runner import (
   BenchmarkRunner,
   RunnerConfigError,
 )
-
 
 DEFAULT_CONFIG_DIR = Path("./config")
 DEFAULT_LLM_CONFIG = "default-llms"
@@ -277,7 +277,7 @@ def execute_benchmark(
   models: list[str],
   llm_config: str | None,
   max_concurrency: int,
-  total_population: int = 1,
+  total_population: int | None = None,
   parallel_sessions: int = 1,
 ) -> BenchmarkResult:
   """Run the benchmark runner synchronously."""
@@ -348,9 +348,11 @@ def execute_benchmark(
 @click.option(
   "--total-population",
   type=click.INT,
-  default=1,
-  show_default=True,
-  help="Total independent LLM completions to collect per questionnaire (population mode).",
+  default=None,
+  help=(
+    "Positive override for independent LLM completions per questionnaire. "
+    "Defaults to questionnaire metadata."
+  ),
 )
 @click.option(
   "--parallel-sessions",
@@ -374,7 +376,7 @@ def main(
   list_llm_configs_flag: bool,
   config_dir: str,
   max_concurrency: int,
-  total_population: int,
+  total_population: int | None,
   parallel_sessions: int,
   verbose: bool,
 ) -> None:
@@ -384,7 +386,7 @@ def main(
       "--max-concurrency must be >= 1",
       param_hint="--max-concurrency",
     )
-  if total_population < 1:
+  if total_population is not None and total_population < 1:
     raise click.BadParameter(
       "--total-population must be >= 1",
       param_hint="--total-population",
@@ -455,7 +457,11 @@ def main(
     questionnaires=selected_questionnaires,
     models=selected_models,
     llm_config=llm_config,
-    total_population=total_population,
+    total_population=(
+      total_population
+      if total_population is not None
+      else max(q.default_population for q in questionnaire_objects)
+    ),
     parallel_sessions=parallel_sessions,
   )
 

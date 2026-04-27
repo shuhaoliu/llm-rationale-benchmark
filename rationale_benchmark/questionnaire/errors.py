@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass
 class QuestionnaireConfigError(Exception):
   """Raised when questionnaire configuration fails validation."""
 
@@ -23,7 +23,7 @@ class QuestionnaireConfigError(Exception):
     return " ".join(parts)
 
 
-@dataclass(frozen=True)
+@dataclass
 class AnswerValidationError(Exception):
   """Raised when an answer fails validation against a question."""
 
