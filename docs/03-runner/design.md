@@ -19,6 +19,8 @@ provider-specific transport logic (owned by the LLM connector layer).
 - Runner configuration (concurrency limits, retry overrides, output paths)
   supplied through CLI options and environment variables; defaults documented in
   `docs/configs.md`.
+- Effective population size resolved from `--total-population` when supplied,
+  otherwise from each questionnaire's `metadata.default_population`.
 - Scoring utilities and data models defined in `docs/interfaces.md`.
 - Structured logging helpers shared across the project (JSON output via
   `structlog`).
@@ -32,15 +34,19 @@ and produces immutable result objects.
    then instantiates `BenchmarkRunner` (wrapper defined in `runner/executor.py`)
    with a `LLMConversationFactory`, concurrency policy, and output descriptors.
 2. `BenchmarkRunner` prepares execution plans for each `provider/model`
-   requested, including questionnaire metadata and derived system prompts.
-3. Executor launches per-model tasks concurrently. Each task:
-   - Creates a fresh `LLMConversation`.
-   - Iterates questionnaire sections and questions sequentially.
+   requested, including questionnaire metadata, resolved `total_population`,
+   and derived system prompts.
+3. Executor launches per-model and per-population tasks concurrently. Each
+   questionnaire administration:
+   - Creates fresh section-scoped `LLMConversation` instances.
+   - Runs independent sections concurrently when capacity allows.
+   - Iterates questions within each section sequentially.
    - Builds prompts and validator hooks for the current question.
+   - Includes prior question-answer pairs from the same section only.
    - Calls `LLMConversation.ask()` with runner-managed retry/backoff overrides.
    - Records `LLMResponse` plus structured metadata for evaluation.
-   - Archives the conversation when all questions are answered or a fatal error
-     occurs.
+   - Archives section transcripts when all questions are answered or a fatal
+     error occurs.
 4. Completed transcripts feed into `runner/evaluator.py`, which applies
    question-level validators, computes `QuestionScore`/`SectionScore` objects,
    and produces aggregate statistics.
@@ -69,23 +75,35 @@ and produces immutable result objects.
   missing.
 - Merge questionnaire `system_prompt` with CLI overrides and per-model metadata.
 - Produce an immutable `ModelExecutionPlan` describing questionnaire IDs,
-  section ordering, retry policies, and output destinations.
+  resolved `total_population`, section execution groups, retry policies, and
+  output destinations.
+- Validate population resolution: a provided CLI `--total-population` must be a
+  positive integer and overrides `metadata.default_population`; otherwise the
+  metadata default is used.
 
 ### Concurrency Model
 - Default to asynchronous execution using `asyncio`, with a configurable
   semaphore limiting the number of simultaneous provider calls. The semaphore
   defaults to the minimum of the CLI `--max-concurrency` flag and provider
   `max_concurrent` hints derived from configuration metadata.
+- Use `--parallel-sessions` to cap the number of questionnaire administrations
+  in flight for population runs.
 - Each model plan runs in its own task to preserve isolation. Tasks share a
   `RunnerTracer` for logging but never share mutable transcript state.
+- Sections within one administration may run concurrently because each section
+  has its own context.
 - Executor collects task results via `asyncio.gather(return_exceptions=True)` so
   individual failures become structured errors without cancelling other tasks.
 
 ### Question Loop
+- For each section:
+  - Start a section-scoped conversation using the questionnaire system prompt
+    and that section's instructions.
+  - Exclude question-answer pairs from every other section.
 - For each question:
   - Construct a `PromptContext` containing questionnaire metadata, section
-    instructions, and question prompt. Reuse templates from `runner/prompts.py`
-    to maintain consistent formatting.
+    instructions, prior in-section question-answer pairs, and question prompt.
+    Reuse templates from `runner/prompts.py` to maintain consistent formatting.
   - Resolve validators appropriate for the `QuestionType` using the questionnaire
     module's helper registry.
   - Call `conversation.ask(prompt, validator=..., max_attempts=override)` and
@@ -98,11 +116,13 @@ and produces immutable result objects.
   error, and continue executing the remaining questions (unless CLI requests
   abort-on-error). Failed questions still produce partial artifacts for post-run
   analysis.
+- Preserve ordering within each section; later questions must not start until
+  preceding questions in that section have final answers or terminal failures.
 
 ### Conversation Finalization
 - After a questionnaire finishes (or aborts), call `conversation.archive()` to
-  obtain immutable `ConversationTurn` history. Store alongside per-question
-  traces inside a `ModelExecutionResult`.
+  obtain immutable section-scoped `ConversationTurn` histories. Store alongside
+  per-question traces inside a `ModelExecutionResult`.
 - Ensure archives cannot be reused by verifying `LLMConversation.is_archived`
   before returning the result. Attempting to reuse triggers logged warnings.
 
@@ -157,6 +177,7 @@ class PromptContext:
   questionnaire_id: str
   section_name: str
   question: Question
+  prior_answers: list[QuestionAnswer]
   system_prompt: str
 
 @dataclass
@@ -172,7 +193,8 @@ class QuestionRunTrace:
 class ModelExecutionResult:
   model: str
   questionnaire_id: str
-  transcript: list[ConversationTurn]
+  population_index: int
+  section_transcripts: dict[str, list[ConversationTurn]]
   question_traces: list[QuestionRunTrace]
   started_at: datetime
   completed_at: datetime | None
@@ -215,6 +237,10 @@ and unit testing.
 - Unit tests for executor planning and question loops using stubbed
   `LLMConversation` objects that simulate retries, timeouts, and validator
   failures.
+- Unit tests for population resolution, including CLI override precedence and
+  rejection of non-positive `--total-population` values.
+- Concurrency tests verifying sections can run concurrently while questions
+  within a section remain sequential and receive only in-section context.
 - Integration tests covering end-to-end execution against fixture
   questionnaires and mock providers to assert transcript archiving and scoring
   accuracy.

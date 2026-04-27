@@ -23,9 +23,10 @@ and logging policies.
    configuration and questionnaire modules.
 4. Instantiate the runner with validated inputs, concurrency parameters, and
    output settings.
-5. Execute questionnaires against each selected model.
-6. Persist JSON results (file or stdout) and render a human-readable summary.
-7. Exit with `0` on success, non-zero for validation or runtime failures.
+5. Resolve the effective population count for each questionnaire.
+6. Execute questionnaires against each selected model.
+7. Persist JSON results (file or stdout) and render a human-readable summary.
+8. Exit with `0` on success, non-zero for validation or runtime failures.
 
 ### Options
 - `--questionnaire <name>`: Run a single questionnaire (stem of `.yaml` file).
@@ -41,6 +42,10 @@ and logging policies.
 - `--list-questionnaires`: List discovered questionnaire IDs and exit.
 - `--list-llm-configs`: List available LLM configuration stems and exit.
 - `--verbose`: Elevate logging to verbose/DEBUG mode.
+- `--total-population <int>`: Optional positive integer overriding each
+  questionnaire's `metadata.default_population`.
+- `--parallel-sessions <int>`: Maximum concurrent questionnaire
+  administrations; defaults to `1`.
 - `--max-concurrency <int>`: (Planned) Override default concurrency ceiling
   passed to the runner.
 - `--help`: Show usage.
@@ -70,6 +75,9 @@ and display a concise error along with the usage text.
   `QuestionnaireConfigError` identifying the first missing file.
 - Loaded questionnaires undergo schema and semantic validation defined in
   `docs/02-questionnaire/design.md` before execution.
+- Each questionnaire must define a positive `metadata.default_population`.
+  When `--total-population` is supplied, it must be positive and overrides that
+  metadata default for the current run.
 
 ## LLM Configuration Semantics
 - Always load `default-llms.yaml`; overlay the file named by `--llm-config`.
@@ -85,8 +93,11 @@ and display a concise error along with the usage text.
 - Instantiate `BenchmarkRunner` with:
   - Validated questionnaires.
   - `LLMConversationFactory` derived from the merged LLM config.
-  - Concurrency limit (default derived from provider hints; overridden by
-    `--max-concurrency` when available).
+  - Effective `total_population` per questionnaire, resolved from
+    `--total-population` or `metadata.default_population`.
+  - Population concurrency from `--parallel-sessions`.
+  - Provider-call concurrency limit (default derived from provider hints;
+    overridden by `--max-concurrency` when available).
   - Output descriptors (target path, stdout flag).
 - Propagate CLI `--verbose` flag to logging and to runner diagnostics so
   question-level events surface when requested.
@@ -132,6 +143,10 @@ and display a concise error along with the usage text.
 ## Testing Expectations
 - Unit tests cover:
   - Option parsing and mutually exclusive arguments.
+  - Positive integer validation for `--total-population` and
+    `--parallel-sessions`.
+  - CLI `--total-population` override precedence over
+    `metadata.default_population`.
   - Listing commands producing deterministic output.
   - Configuration resolution errors (missing files, unresolved environment
     variables).

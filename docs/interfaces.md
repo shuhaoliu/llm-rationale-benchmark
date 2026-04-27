@@ -43,8 +43,9 @@ class Questionnaire:
   name: str
   description: str | None
   version: int | None
-  metadata: dict[str, str]
+  metadata: dict[str, str | int]
   system_prompt: str
+  default_population: int
   sections: list[Section]
 ```
 
@@ -236,8 +237,10 @@ response parsing while adhering to the normalized request/response interfaces.
 @dataclass
 class QuestionResult:
   questionnaire_id: str
+  section_name: str
   question_id: str
   model: str
+  population_index: int
   response_text: str
   reasoning: str | None
   score: QuestionScore
@@ -247,13 +250,15 @@ class QuestionResult:
 @dataclass
 class ModelBenchmarkResult:
   model: str
+  population_index: int
   questionnaire_scores: list[QuestionnaireScore]
   questions: list[QuestionResult]
-  transcript: list[ConversationTurn]
+  section_transcripts: dict[str, list[ConversationTurn]]
 
 @dataclass
 class BenchmarkSummary:
   questionnaires_run: int
+  total_population: int
   total_questions: int
   models_tested: int
   average_scores_by_questionnaire: dict[str, float]

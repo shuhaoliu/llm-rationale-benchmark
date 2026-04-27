@@ -22,7 +22,8 @@ questionnaire:
   version: 1                    # integer incremented on schema changes
   system_prompt: |              # required system prompt passed to LLMs
     You are a neutral assistant administering the burnout inventory.
-  metadata:                     # optional, arbitrary string key/value pairs
+  metadata:                     # required metadata and provenance values
+    default_population: 5       # fallback if CLI --total-population is absent
     author: "Psych Lab"
     published: "2024-06-01"
 
@@ -61,6 +62,18 @@ questionnaire:
 - The prompt seeds every LLM conversation initiated for the questionnaire.
 - Multi-line prompts are allowed using YAML block scalars.
 
+#### Metadata Requirements
+- `metadata` is required.
+- `metadata.default_population` is required and must be a positive integer.
+- `default_population` suggests how many independent times the full
+  questionnaire is administered to each LLM when the CLI does not provide
+  `--total-population`. For example, `default_population: 5` produces five
+  complete answer sets per LLM by default.
+- A valid positive CLI `--total-population` value overrides
+  `metadata.default_population`.
+- Additional metadata keys may store provenance, experiment identifiers,
+  demographics, or IRB references.
+
 #### Question Requirements
 - `id`: unique across whole questionnaire (namespaced by section in practice).
 - `type`: supported values `"rating-5"`, `"rating-7"`, `"rating-11"`, `"choice"`.
@@ -97,8 +110,9 @@ friendly error messages.
    - `total` must be positive and at least the max defined weight.
    - Scoring definitions must match the declared `QuestionType` (e.g., rating
      questions may not supply option maps).
-   - Optional but defined fields (like `metadata`) must adhere to documented
-     shapes.
+   - `metadata.default_population` must be present and positive.
+   - CLI `--total-population`, when provided, must be positive.
+   - Metadata fields must adhere to documented shapes.
 3. **Cross-file validation** (optional future enhancement) to verify that
    questionnaire IDs and versions do not conflict across files.
 
@@ -135,8 +149,9 @@ class Questionnaire:
   name: str
   description: str | None
   version: int | None
-  metadata: dict[str, str]
+  metadata: dict[str, str | int]
   system_prompt: str
+  default_population: int
   sections: list[Section]
 
 @dataclass
@@ -192,17 +207,30 @@ respondents. Rather than collecting a single answer, the goal is to observe the
 *distribution* of answers — histograms, mean ± SD, per-question entropy, etc.
 — across many independent LLM sessions seeded by the same system prompt.
 
-The runner exposes two parameters that control this mode:
+The questionnaire metadata and runner together control this mode:
 
-| Parameter           | Type | Description                                                                   |
-|---------------------|------|-------------------------------------------------------------------------------|
-| `total_population`  | int  | Total number of independent LLM completions to collect for the questionnaire. |
-| `parallel_sessions` | int  | Maximum number of completions to run concurrently; governs throughput and rate-limit headroom. |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `default_population` | int | Required YAML fallback answer-set count per LLM. |
+| `total_population` | int | Optional CLI override for the answer-set count. |
+| `parallel_sessions` | int | Maximum concurrent completions. |
 
-**Execution model** — the runner schedules `total_population` sessions, keeping
-at most `parallel_sessions` in-flight simultaneously. Each session is fully
-independent: a fresh conversation context, the same `system_prompt`, and the
-same sequence of questions. No state is shared between sessions.
+**Population resolution** — the runner uses a valid positive
+`--total-population` CLI value when one is provided. Otherwise, it falls back to
+the questionnaire's required `metadata.default_population` value.
+
+**Execution model** — the runner schedules the resolved `total_population`
+independent administrations per LLM, keeping at most `parallel_sessions`
+in-flight simultaneously. Each administration starts from a fresh context and
+uses the same `system_prompt`.
+
+Sections within a questionnaire are independent. The runner may send different
+sections to an LLM concurrently, and section requests must not include
+question-answer pairs from other sections in their context.
+
+Questions within the same section are ordered. The runner **MUST** query them in
+sequence, carrying the question-answer pairs from preceding questions in that
+section as context for later questions.
 
 **Output** — each completed session produces a `QuestionnaireResult`. The runner
 collects all results into a `PopulationResult` aggregate (see Data Model) that
@@ -226,7 +254,9 @@ distributed across the population.
   optional fields (e.g., `subscales`). Versioning via `questionnaire.version`
   signals consumers to adjust behaviour.
 - Metadata block offers a flexible location for experiment identifiers,
-  demographics, or IRB references without schema changes.
+  demographics, or IRB references without schema changes. The reserved
+  `default_population` key is required and supplies the fallback repeated
+  administration count.
 
 ### Testing Considerations
 - Unit tests cover: schema validation, per-type answer validation, scoring, and
@@ -236,8 +266,15 @@ distributed across the population.
 - Round-trip tests ensure loaded questionnaires can serialize back to YAML
   without data loss (excluding comment formatting).
 - Population dispatch tests mock the LLM client and assert that exactly
-  `total_population` completions are requested with at most `parallel_sessions`
-  in-flight at any point, verifying both the count and the concurrency ceiling.
+  `total_population` complete administrations are requested with at most
+  `parallel_sessions` in-flight at any point, verifying both the count and the
+  concurrency ceiling.
+- Population resolution tests assert that a valid positive CLI
+  `--total-population` overrides `metadata.default_population`, and that the
+  metadata default is used when the CLI value is absent.
+- Section dispatch tests assert that sections may execute concurrently without
+  sharing context, while questions within each section are queried sequentially
+  with prior in-section question-answer pairs included.
 
 ### Future Enhancements
 - Add conditional logic (skip patterns) between questions while keeping YAML

@@ -113,6 +113,7 @@ questionnaire:
   system_prompt: |
     You are a neutral assistant administering the burnout inventory.
   metadata:
+    default_population: 5
     author: "Psych Lab"
   sections:
     - name: "Workload"
@@ -131,6 +132,8 @@ questionnaire:
 - `name`: human-readable title.
 - `sections`: non-empty list; each section contains `questions`.
 - `system_prompt`: non-empty string passed to every LLM conversation.
+- `metadata.default_population`: positive integer fallback used when the CLI
+  does not provide `--total-population`.
 
 ### Question Requirements
 - Supported `type` values: `rating-5`, `rating-7`, `rating-11`, `choice`.
@@ -142,7 +145,8 @@ questionnaire:
 ### Validation Pipeline
 1. **Schema validation** ensures types and required keys are present.
 2. **Semantic validation** enforces unique IDs, weight lengths, option coverage,
-   and numeric ranges (`0 ≤ weight ≤ total`).
+   numeric ranges (`0 ≤ weight ≤ total`), and positive
+   `metadata.default_population`.
 3. **(Planned)** Cross-file validation guards against duplicate questionnaire
    IDs and version regressions.
 
@@ -174,5 +178,7 @@ pointer (e.g., `sections[0].questions[1].scoring.weights[3]`).
   configuration wholesale.
 - Version questionnaires whenever question wording, scoring, or metadata
   semantics change.
+- Treat `metadata.default_population` as a safe run default only; a valid
+  positive CLI `--total-population` value overrides it for that invocation.
 - Treat configuration changes as code: accompany them with tests where
   applicable and update documentation references.

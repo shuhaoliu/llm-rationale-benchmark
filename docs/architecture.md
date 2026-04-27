@@ -24,12 +24,15 @@ this document.
 3. **Questionnaire loading** parses YAML files from
    `config/questionnaires/`, runs schema + semantic validation, and constructs
    domain models (`Questionnaire`, `Section`, `Question`, `ScoringRule`).
-4. **Conversation assembly** uses `LLMConversationFactory` to create
+4. **Population resolution** chooses the effective run count from a valid CLI
+   `--total-population` override or the questionnaire's
+   `metadata.default_population`.
+5. **Conversation assembly** uses `LLMConversationFactory` to create
    `LLMConversation` instances for each requested `provider/model`, wiring the
    appropriate provider adapter and retry policy.
-5. **Benchmark execution** iterates loaded questionnaires, prompts each model,
+6. **Benchmark execution** iterates loaded questionnaires, prompts each model,
    applies answer validators, and aggregates scores and free-form responses.
-6. **Result emission** writes JSON reports, logs structured telemetry, and
+7. **Result emission** writes JSON reports, logs structured telemetry, and
    surfaces CLI summaries.
 
 ## Core Components
@@ -72,8 +75,9 @@ this document.
 - Discovers YAML questionnaire files, preventing directory traversal and
   enforcing `.yaml` suffixes.
 - Validation pipeline performs schema checks, semantic validation (unique IDs,
-  scoring constraints, type-specific rules), and surfaces precise error
-  locations via `QuestionnaireConfigError`.
+  scoring constraints, type-specific rules, positive
+  `metadata.default_population`), and surfaces precise error locations via
+  `QuestionnaireConfigError`.
 - Domain models normalize rating weight lists into dictionary form to unify
   scoring logic across question types.
 - Exposes helpers for listing questionnaires, loading one or many, and running
@@ -83,11 +87,12 @@ this document.
 - Operates on a validated `Questionnaire` and a `LLMConversationFactory`
   instance, deferring provider-specific setup to the connector layer.
 - Splits execution into two phases:
-  - `runner/executor.py` queries all configured LLMs concurrently. Within each
-    conversation it advances through questionnaire sections question-by-question,
-    builds prompts from question metadata, and calls
-    `LLMConversation.ask()` with retry/backoff semantics. After the final
-    question, it archives the transcript for evaluation.
+  - `runner/executor.py` queries all configured LLMs concurrently for the
+    resolved `total_population`. Different questionnaire sections may execute
+    concurrently because their contexts are independent. Within each section,
+    questions run in sequence and include only prior question-answer pairs from
+    that same section. After each administration completes, it archives the
+    transcript set for evaluation.
   - `runner/evaluator.py` consumes archived conversations, applies question-type
     validators, computes `QuestionScore` aggregates, and assembles the final
     benchmark report.
@@ -112,12 +117,15 @@ this document.
       "questionnaires": ["string"],
       "llm_config": "string",
       "execution_timestamp": "ISO8601",
-      "models_tested": ["provider/model"]
+      "models_tested": ["provider/model"],
+      "total_population_by_questionnaire": {}
     },
     "results": [
       {
         "questionnaire": "string",
         "model": "provider/model",
+        "population_index": "int",
+        "section_name": "string",
         "question_id": "string",
         "response": "string",
         "reasoning": "string",
@@ -128,6 +136,7 @@ this document.
     ],
     "summary": {
       "questionnaires_run": "int",
+      "total_population": "int",
       "total_questions": "int",
       "models_tested": "int",
       "average_scores_by_questionnaire": {},

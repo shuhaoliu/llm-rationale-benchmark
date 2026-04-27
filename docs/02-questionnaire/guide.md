@@ -22,6 +22,7 @@ questionnaire:
   system_prompt: |
     You are a neutral assistant administering the burnout inventory.
   metadata:
+    default_population: 5
     author: "Psych Lab"
     published: "2024-06-01"
   sections: []
@@ -32,11 +33,14 @@ questionnaire:
 - `name`: human-readable title used in CLI listings.
 - `sections`: non-empty list once populated.
 - `system_prompt`: instructions sent as the system message to every LLM run.
+- `metadata.default_population`: positive integer count of complete answer sets
+  to collect per LLM when `--total-population` is not provided.
 
 ### Optional Fields
 - `description`: free-form summary.
 - `version`: increment when schema changes (e.g., add/remove questions).
-- `metadata`: arbitrary key/value strings for provenance and IRB info.
+- Other `metadata` keys: arbitrary values for provenance, experiment, and IRB
+  info.
 
 ### Define the System Prompt
 - Keep prompts concise but explicit about tone, safety guidance, and answer format.
@@ -44,7 +48,8 @@ questionnaire:
 - Treat the prompt as required protocol wording shared by all models.
 
 ## 3. Add Sections
-Sections group related questions and appear sequentially in the CLI UI.
+Sections group related questions. Different sections are independent and may be
+sent to an LLM concurrently.
 
 ```yaml
   sections:
@@ -56,10 +61,16 @@ Sections group related questions and appear sequentially in the CLI UI.
 - `name`: unique within the questionnaire.
 - `instructions`: optional helper text shown before the section.
 - `questions`: populate next.
+- Section requests must not include question-answer pairs from other sections in
+  their context.
 
 ## 4. Add Questions
 Each question requires an ID, type, prompt, and scoring definition. Supported
 types: `rating-5`, `rating-7`, `rating-11`, `choice`.
+
+Questions within the same section **MUST** be queried in sequence. Each later
+question in a section receives the question-answer pairs from preceding
+questions in that section as context.
 
 ### Rating Question Template
 ```yaml
@@ -128,11 +139,15 @@ Repeat the section pattern for each thematic cluster. Example excerpt:
             weights: [0, 1, 2, 4, 5, 6, 7]
 ```
 
-Ensure section ordering reflects the experience you intend for participants.
+Ensure question ordering within each section reflects the experience you intend
+for participants. Do not rely on cross-section ordering or context.
 
 ## 8. Validate Locally
 1. Run the standalone sanity checker:
-   `uv run python bin/validate_questionnaire.py config/questionnaires/burnout-survey.yaml`.
+   ```bash
+   uv run python bin/validate_questionnaire.py \
+     config/questionnaires/burnout-survey.yaml
+   ```
    It performs YAML parsing, schema validation, and semantic checks, reporting
    issues with precise line numbers when available.
 2. Run `uv run rationale-benchmark --list-questionnaires` to confirm the new
@@ -155,8 +170,9 @@ Ensure section ordering reflects the experience you intend for participants.
 
 Some questionnaires are intended for large-population studies where the goal is
 to observe the *distribution* of LLM answers rather than a single response.
-Use the `--total-population` and `--parallel-sessions` flags to query the same
-model repeatedly:
+Set `metadata.default_population` to the fallback number of complete answer
+sets to collect per LLM. Provide `--total-population` when a run should override
+that default, and use `--parallel-sessions` to control runtime concurrency:
 
 ```
 uv run rationale-benchmark \
@@ -166,12 +182,21 @@ uv run rationale-benchmark \
   --parallel-sessions 10
 ```
 
-- `--total-population`: total number of independent LLM completions to collect.
+- `metadata.default_population`: fallback number of independent complete
+  questionnaire administrations to collect per LLM. For example,
+  `default_population: 5` sends the full questionnaire to each LLM five times
+  when no CLI override is provided.
+- `--total-population`: optional positive integer override for
+  `metadata.default_population`.
 - `--parallel-sessions`: how many completions run concurrently (default: 1).
   Tune this against your model's rate-limit budget — higher values increase
   throughput but risk hitting token-per-minute caps.
 - Every session is fully independent: fresh context, identical system prompt and
   questions. No state is shared between sessions.
+- Sections may run concurrently because they are independent; no section context
+  includes answers from another section.
+- Questions within one section are queried sequentially with prior in-section
+  question-answer pairs in context.
 - Results are saved per-session and aggregated into a population summary
   containing distribution statistics (histograms, mean, standard deviation,
   per-question entropy) for downstream analysis.
@@ -181,9 +206,12 @@ uv run rationale-benchmark \
 - [ ] Every question defines `scoring.total` and `scoring.weights`.
 - [ ] Rating weight lists include exactly one entry per rating value.
 - [ ] Choice weights cover every option key.
+- [ ] `metadata.default_population` is present and is a positive integer.
+- [ ] Question order is intentional within each section.
 - [ ] `bin/validate_questionnaire.py` passes for the new or modified files.
 - [ ] YAML lint passes (`uv run yamllint config/questionnaires/burnout-survey.yaml`).
 - [ ] README snippets remain accurate if examples were edited.
 - [ ] A clear `system_prompt` is defined and reviewed for experiment safety.
-- [ ] If population mode is intended, `--total-population` and
-  `--parallel-sessions` values are confirmed and within model rate-limit budgets.
+- [ ] `metadata.default_population`, any `--total-population` override, and
+  `--parallel-sessions` values are confirmed and within model rate-limit
+  budgets.
