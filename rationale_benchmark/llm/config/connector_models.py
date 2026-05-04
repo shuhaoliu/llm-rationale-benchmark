@@ -59,7 +59,7 @@ class LLMConnectorConfig(BaseModel):
   api_key: Optional[str] = None
   endpoint: Optional[str] = None
   base_url: Optional[str] = None
-  timeout_seconds: int = Field(default=30, ge=1)
+  timeout_seconds: int = Field(default=30, ge=0)
   retry: RetryPolicy = Field(default_factory=RetryPolicy)
   response_format: ResponseFormat = ResponseFormat.JSON
   temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)

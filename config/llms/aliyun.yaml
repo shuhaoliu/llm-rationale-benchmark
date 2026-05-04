@@ -2,13 +2,14 @@
 # This file provides base configuration and defaults for all LLM providers
 
 defaults:
-  timeout: 30
+  timeout: 0
   max_retries: 3
   temperature: 0
   max_tokens: 1024
+  response_format: text
 
 providers:
-  aliyun:
+  aliyun_openai_compatible:
     api_key: "${DASHSCOPE_API_KEY}"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     models:

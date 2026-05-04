@@ -160,6 +160,27 @@ def test_suffix_openai_compatible_provider(tmp_path):
   assert config.base_url == "https://openrouter.ai/api/v1"
 
 
+def test_zero_timeout_means_no_client_side_timeout(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    defaults:
+      timeout: 0
+    providers:
+      openrouter_openai_compatible:
+        api_key: token
+        base_url: https://openrouter.ai/api/v1
+        models:
+          - qwen3-max
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+  configs = loader.load(path)
+
+  assert configs["openrouter_openai_compatible/qwen3-max"].timeout_seconds == 0
+
+
 def test_streaming_parameters_are_rejected(tmp_path):
   path = write_config(
     tmp_path,

@@ -94,7 +94,8 @@ Overlay semantics:
 ### Validation
 - YAML parsing errors halt execution with `ConfigurationError`.
 - Required sections (`providers`) and keys (`api_key`, `models`) must exist.
-- Numeric bounds enforced (`0.0 ≤ temperature ≤ 2.0`, positive timeouts).
+- Numeric bounds enforced (`0.0 ≤ temperature ≤ 2.0`, non-negative timeouts).
+  Set `timeout: 0` to disable client-side request deadlines.
 - Streaming-specific parameters (`stream`, `streaming`, `stream_options`) are
   disallowed.
 - Provider names must match the supported registry.

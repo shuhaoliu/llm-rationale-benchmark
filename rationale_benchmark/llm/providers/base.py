@@ -35,8 +35,13 @@ class JSONHTTPProvider(BaseProviderClient):
   ) -> Tuple[dict[str, Any], Dict[str, str]]:
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(url, data=data, headers=headers, method="POST")
+    timeout = (
+      None
+      if self.config.timeout_seconds == 0
+      else self.config.timeout_seconds
+    )
     try:
-      with request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
+      with request.urlopen(req, timeout=timeout) as resp:
         text = resp.read().decode("utf-8")
         parsed = self._safe_load_json(text)
         return parsed, dict(resp.headers)
@@ -86,4 +91,3 @@ class JSONHTTPProvider(BaseProviderClient):
     if "message" in payload:
       return str(payload["message"])
     return ""
-

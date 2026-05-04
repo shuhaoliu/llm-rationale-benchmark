@@ -43,7 +43,8 @@ providers:
 
 ## Defaults Section
 `defaults` is optional in override files but recommended. Recognized keys align with the connector configuration model:
-- `timeout`: Integer seconds before requests are aborted (default: 30).
+- `timeout`: Integer seconds before requests are aborted (default: 30). Use `0`
+  to disable client-side request deadlines.
 - `max_retries`: Maximum retry attempts for transient errors (default: 3).
 - `temperature`: Floating-point value `0.0–2.0`. Controls creativity; defaults to `0.7`.
 - `max_tokens`: Maximum tokens requested per completion (default: 1000).
