@@ -1,0 +1,18 @@
+# Default LLM configuration for rationale benchmark
+# This file provides base configuration and defaults for all LLM providers
+
+defaults:
+  timeout: 30
+  max_retries: 3
+  temperature: 0
+  max_tokens: 1024
+
+providers:
+  aliyun:
+    api_key: "${DASHSCOPE_API_KEY}"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    models:
+      - "qwen3.6-plus"
+      - "qwen3.5-plus"
+      - "deepseek-v4-pro"
+      - "glm-5.1"
