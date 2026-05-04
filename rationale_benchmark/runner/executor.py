@@ -27,6 +27,11 @@ from rationale_benchmark.runner.types import (
   now_utc,
 )
 
+INTERRUPTED_PROGRESS_MESSAGE = (
+  "Interrupted: all remaining populations and sections are marked as error "
+  "because they were not queried."
+)
+
 
 class ConversationFactoryProtocol(Protocol):
   """Protocol describing conversation factories consumed by the runner."""
@@ -130,6 +135,10 @@ class BenchmarkRunner:
           continue
         records.append(outcome)
         errors.extend(outcome.errors)
+    except asyncio.CancelledError:
+      if self._progress_display is not None:
+        self._progress_display.mark_unfinished_error(INTERRUPTED_PROGRESS_MESSAGE)
+      raise
     finally:
       if self._progress_display is not None:
         self._progress_display.stop()
@@ -149,16 +158,22 @@ class BenchmarkRunner:
   ) -> RawRunResult:
     """Synchronous wrapper executing the runner in a new event loop."""
 
-    return asyncio.run(
-      self.run(
-        questionnaire=questionnaire,
-        llm_ids=llm_ids,
-        questionnaires=questionnaires,
-        total_population=total_population,
-        output_path=output_path,
-        questionnaire_path=questionnaire_path,
+    try:
+      return asyncio.run(
+        self.run(
+          questionnaire=questionnaire,
+          llm_ids=llm_ids,
+          questionnaires=questionnaires,
+          total_population=total_population,
+          output_path=output_path,
+          questionnaire_path=questionnaire_path,
+        )
       )
-    )
+    except KeyboardInterrupt:
+      if self._progress_display is not None:
+        self._progress_display.mark_unfinished_error(INTERRUPTED_PROGRESS_MESSAGE)
+        self._progress_display.stop()
+      raise
 
   def _resolve_single_questionnaire(
     self,
@@ -386,22 +401,29 @@ class BenchmarkRunner:
     population_index: int,
     provider_semaphore: asyncio.Semaphore,
   ) -> tuple[dict[str, Any], list[RunnerError], Any]:
-    try:
-      return await self._execute_section(
-        questionnaire=questionnaire,
-        section=section,
-        section_index=section_index,
-        llm_id=llm_id,
-        population_index=population_index,
-        provider_semaphore=provider_semaphore,
-      )
-    finally:
-      if self._progress_display is not None:
+    result = await self._execute_section(
+      questionnaire=questionnaire,
+      section=section,
+      section_index=section_index,
+      llm_id=llm_id,
+      population_index=population_index,
+      provider_semaphore=provider_semaphore,
+    )
+    _section_payload, section_errors, _first_query_time = result
+    if self._progress_display is not None:
+      if section_errors:
+        self._progress_display.mark_section_error(
+          llm_id,
+          population_index,
+          section_index,
+        )
+      else:
         self._progress_display.mark_section_completed(
           llm_id,
           population_index,
           section_index,
         )
+    return result
 
   def _question_error(
     self,

@@ -14,7 +14,7 @@ from rationale_benchmark.llm.config.connector_models import (
   ResponseFormat,
 )
 from rationale_benchmark.llm.conversation import LLMConversation
-from rationale_benchmark.llm.exceptions import ConfigurationError
+from rationale_benchmark.llm.exceptions import ConfigurationError, LLMConnectorError
 from rationale_benchmark.llm.provider_client import BaseProviderClient, ProviderResponse
 from rationale_benchmark.questionnaire.models import (
   Question,
@@ -57,6 +57,18 @@ class RecordingProvider(BaseProviderClient):
     )
 
 
+class ErrorProvider(BaseProviderClient):
+  """Provider raising a connector error for progress error-state tests."""
+
+  def _generate(
+    self,
+    messages: list[dict[str, str]],
+    *,
+    response_format: ResponseFormat,
+  ) -> ProviderResponse:
+    raise LLMConnectorError("provider failed after retries")
+
+
 class StubConversationFactory:
   """Factory creating conversations with static responses."""
 
@@ -97,6 +109,29 @@ class StubConversationFactory:
     )
 
 
+class ErrorConversationFactory:
+  """Factory creating conversations that fail every provider request."""
+
+  def create(
+    self,
+    model: str,
+    *,
+    system_prompt: str | None = None,
+  ) -> LLMConversation:
+    config = LLMConnectorConfig(
+      provider=ProviderType.OPENAI,
+      model=model,
+      api_key="test-key",
+      system_prompt=system_prompt,
+      response_format=ResponseFormat.JSON,
+    )
+    return LLMConversation(
+      config=config,
+      provider_client=ErrorProvider(config),
+      system_prompt=system_prompt,
+    )
+
+
 class RecordingProgressDisplay:
   """Progress display test double recording runner status transitions."""
 
@@ -104,6 +139,8 @@ class RecordingProgressDisplay:
     self.starts: list[QueryProgressSnapshot] = []
     self.started_sections: list[tuple[str, int, int]] = []
     self.completed_sections: list[tuple[str, int, int]] = []
+    self.error_sections: list[tuple[str, int, int]] = []
+    self.unfinished_error_messages: list[str] = []
     self.stopped = False
     self._lock = threading.Lock()
 
@@ -140,6 +177,19 @@ class RecordingProgressDisplay:
   ) -> None:
     with self._lock:
       self.completed_sections.append((llm_id, population_index, section_index))
+
+  def mark_section_error(
+    self,
+    llm_id: str,
+    population_index: int,
+    section_index: int,
+  ) -> None:
+    with self._lock:
+      self.error_sections.append((llm_id, population_index, section_index))
+
+  def mark_unfinished_error(self, message: str) -> None:
+    with self._lock:
+      self.unfinished_error_messages.append(message)
 
   def stop(self) -> None:
     with self._lock:
@@ -479,3 +529,63 @@ def test_progress_marks_only_queries_that_are_in_flight() -> None:
 
   assert not thread.is_alive()
   assert thread_errors == []
+
+
+def test_progress_marks_sections_with_response_errors_as_error() -> None:
+  questionnaire = build_two_section_questionnaire()
+  display = RecordingProgressDisplay()
+  runner = BenchmarkRunner(
+    ErrorConversationFactory(),
+    max_concurrency=2,
+    progress_display=display,
+  )
+
+  result = runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    total_population=1,
+  )
+
+  assert result.errors
+  assert display.completed_sections == []
+  assert set(display.error_sections) == {
+    ("openai/gpt-4", 0, 0),
+    ("openai/gpt-4", 0, 1),
+  }
+
+
+def test_progress_marks_unfinished_sections_as_error_on_keyboard_interrupt(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  questionnaire = build_two_section_questionnaire()
+  display = RecordingProgressDisplay()
+  runner = BenchmarkRunner(
+    StubConversationFactory({}),
+    max_concurrency=2,
+    progress_display=display,
+  )
+
+  def raise_keyboard_interrupt(coro: Any) -> None:
+    coro.close()
+    raise KeyboardInterrupt
+
+  monkeypatch.setattr(
+    "rationale_benchmark.runner.executor.asyncio.run",
+    raise_keyboard_interrupt,
+  )
+
+  with pytest.raises(KeyboardInterrupt):
+    runner.run_sync(
+      questionnaire=questionnaire,
+      llm_ids=["openai/gpt-4"],
+      total_population=1,
+    )
+
+  assert display.error_sections == []
+  assert display.unfinished_error_messages == [
+    (
+      "Interrupted: all remaining populations and sections are marked as "
+      "error because they were not queried."
+    )
+  ]
+  assert display.stopped is True
