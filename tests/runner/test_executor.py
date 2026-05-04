@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,7 @@ from rationale_benchmark.questionnaire.models import (
   Section,
 )
 from rationale_benchmark.runner.executor import BenchmarkRunner, RunnerConfigError
+from rationale_benchmark.runner.progress_display import QueryProgressSnapshot
 
 
 class RecordingProvider(BaseProviderClient):
@@ -90,6 +93,123 @@ class StubConversationFactory:
     return LLMConversation(
       config=config,
       provider_client=provider,
+      system_prompt=system_prompt,
+    )
+
+
+class RecordingProgressDisplay:
+  """Progress display test double recording runner status transitions."""
+
+  def __init__(self) -> None:
+    self.starts: list[QueryProgressSnapshot] = []
+    self.started_sections: list[tuple[str, int, int]] = []
+    self.completed_sections: list[tuple[str, int, int]] = []
+    self.stopped = False
+    self._lock = threading.Lock()
+
+  def start(
+    self,
+    *,
+    llm_ids: list[str],
+    population_size: int,
+    section_count: int,
+  ) -> None:
+    with self._lock:
+      self.starts.append(
+        QueryProgressSnapshot.empty(
+          llm_ids=llm_ids,
+          population_size=population_size,
+          section_count=section_count,
+        )
+      )
+
+  def mark_section_started(
+    self,
+    llm_id: str,
+    population_index: int,
+    section_index: int,
+  ) -> None:
+    with self._lock:
+      self.started_sections.append((llm_id, population_index, section_index))
+
+  def mark_section_completed(
+    self,
+    llm_id: str,
+    population_index: int,
+    section_index: int,
+  ) -> None:
+    with self._lock:
+      self.completed_sections.append((llm_id, population_index, section_index))
+
+  def stop(self) -> None:
+    with self._lock:
+      self.stopped = True
+
+  def started_count(self) -> int:
+    with self._lock:
+      return len(self.started_sections)
+
+
+class BlockingProvider(BaseProviderClient):
+  """Provider blocking the first request so progress state can be inspected."""
+
+  def __init__(
+    self,
+    config: LLMConnectorConfig,
+    first_request_started: threading.Event,
+    release_first_request: threading.Event,
+  ) -> None:
+    super().__init__(config)
+    self._first_request_started = first_request_started
+    self._release_first_request = release_first_request
+
+  def _generate(
+    self,
+    messages: list[dict[str, str]],
+    *,
+    response_format: ResponseFormat,
+  ) -> ProviderResponse:
+    if not self._first_request_started.is_set():
+      self._first_request_started.set()
+      self._release_first_request.wait(timeout=5)
+    return ProviderResponse(
+      content=json.dumps({"answer": 5}),
+      raw={"messages": messages},
+      metadata={},
+    )
+
+
+class BlockingConversationFactory:
+  """Factory creating blocking conversations for concurrency progress tests."""
+
+  def __init__(
+    self,
+    first_request_started: threading.Event,
+    release_first_request: threading.Event,
+  ) -> None:
+    self._first_request_started = first_request_started
+    self._release_first_request = release_first_request
+
+  def create(
+    self,
+    model: str,
+    *,
+    system_prompt: str | None = None,
+  ) -> LLMConversation:
+    config = LLMConnectorConfig(
+      provider=ProviderType.OPENAI,
+      model=model,
+      api_key="test-key",
+      system_prompt=system_prompt,
+      response_format=ResponseFormat.JSON,
+    )
+    return LLMConversation(
+      config=config,
+      provider_client=BlockingProvider(
+        config,
+        self._first_request_started,
+        self._release_first_request,
+      ),
       system_prompt=system_prompt,
     )
 
@@ -292,3 +412,70 @@ def test_runner_records_configuration_errors() -> None:
   assert result.records[0].llm_id == "missing/model"
   assert result.records[0].errors
   assert result.records[0].errors[0].stage == "configuration"
+
+
+def test_runner_updates_progress_display_for_sections() -> None:
+  questionnaire = build_two_section_questionnaire()
+  display = RecordingProgressDisplay()
+  factory = StubConversationFactory(
+    {
+      "openai/gpt-4": [json.dumps({"answer": 5}), json.dumps({"answer": 4})],
+    },
+  )
+  runner = BenchmarkRunner(factory, max_concurrency=2, progress_display=display)
+
+  runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    total_population=1,
+  )
+
+  assert len(display.starts) == 1
+  assert display.starts[0].llm_ids == ["openai/gpt-4"]
+  assert display.starts[0].population_size == 1
+  assert display.starts[0].section_count == 2
+  assert set(display.started_sections) == {
+    ("openai/gpt-4", 0, 0),
+    ("openai/gpt-4", 0, 1),
+  }
+  assert set(display.completed_sections) == {
+    ("openai/gpt-4", 0, 0),
+    ("openai/gpt-4", 0, 1),
+  }
+  assert display.stopped is True
+
+
+def test_progress_marks_only_queries_that_are_in_flight() -> None:
+  questionnaire = build_two_section_questionnaire()
+  display = RecordingProgressDisplay()
+  first_request_started = threading.Event()
+  release_first_request = threading.Event()
+  runner = BenchmarkRunner(
+    BlockingConversationFactory(first_request_started, release_first_request),
+    max_concurrency=1,
+    progress_display=display,
+  )
+  thread_errors: list[BaseException] = []
+
+  def run_runner() -> None:
+    try:
+      runner.run_sync(
+        questionnaire=questionnaire,
+        llm_ids=["openai/gpt-4"],
+        total_population=1,
+      )
+    except BaseException as exc:
+      thread_errors.append(exc)
+
+  thread = threading.Thread(target=run_runner)
+  thread.start()
+  try:
+    assert first_request_started.wait(timeout=5)
+    time.sleep(0.1)
+    assert display.started_count() == 1
+  finally:
+    release_first_request.set()
+    thread.join(timeout=5)
+
+  assert not thread.is_alive()
+  assert thread_errors == []

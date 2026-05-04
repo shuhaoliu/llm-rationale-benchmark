@@ -16,6 +16,7 @@ from rationale_benchmark.llm.exceptions import (
   ValidationFailedError,
 )
 from rationale_benchmark.questionnaire.models import Questionnaire, Section
+from rationale_benchmark.runner.progress_display import QueryProgressDisplayProtocol
 from rationale_benchmark.runner.prompts import build_prompt
 from rationale_benchmark.runner.types import (
   PromptContext,
@@ -50,11 +51,13 @@ class BenchmarkRunner:
     conversation_factory: ConversationFactoryProtocol,
     *,
     max_concurrency: int = 5,
+    progress_display: QueryProgressDisplayProtocol | None = None,
   ) -> None:
     if max_concurrency < 1:
       raise RunnerConfigError("max_concurrency must be >= 1")
     self._conversation_factory = conversation_factory
     self._max_concurrency = max_concurrency
+    self._progress_display = progress_display
 
   async def run(
     self,
@@ -90,35 +93,46 @@ class BenchmarkRunner:
 
     provider_semaphore = asyncio.Semaphore(self._max_concurrency)
     write_lock = asyncio.Lock()
-    tasks = [
-      asyncio.create_task(
-        self._execute_questionnaire(
-          questionnaire=questionnaire,
-          questionnaire_path=source_path,
-          llm_id=llm_id,
-          population_index=population_index,
-          provider_semaphore=provider_semaphore,
-          output_path=destination,
-          write_lock=write_lock,
-        )
+    if self._progress_display is not None:
+      self._progress_display.start(
+        llm_ids=list(llm_ids),
+        population_size=population,
+        section_count=len(questionnaire.sections),
       )
-      for llm_id in llm_ids
-      for population_index in range(population)
-    ]
 
-    records: list[RawResponseRecord] = []
-    errors: list[RunnerError] = []
-    for outcome in await asyncio.gather(*tasks, return_exceptions=True):
-      if isinstance(outcome, Exception):
-        error = RunnerError(
-          llm_id="",
-          stage="runtime",
-          message=str(outcome),
+    try:
+      tasks = [
+        asyncio.create_task(
+          self._execute_questionnaire(
+            questionnaire=questionnaire,
+            questionnaire_path=source_path,
+            llm_id=llm_id,
+            population_index=population_index,
+            provider_semaphore=provider_semaphore,
+            output_path=destination,
+            write_lock=write_lock,
+          )
         )
-        errors.append(error)
-        continue
-      records.append(outcome)
-      errors.extend(outcome.errors)
+        for llm_id in llm_ids
+        for population_index in range(population)
+      ]
+
+      records: list[RawResponseRecord] = []
+      errors: list[RunnerError] = []
+      for outcome in await asyncio.gather(*tasks, return_exceptions=True):
+        if isinstance(outcome, Exception):
+          error = RunnerError(
+            llm_id="",
+            stage="runtime",
+            message=str(outcome),
+          )
+          errors.append(error)
+          continue
+        records.append(outcome)
+        errors.extend(outcome.errors)
+    finally:
+      if self._progress_display is not None:
+        self._progress_display.stop()
 
     records.sort(key=lambda record: (record.llm_id, record.population_index))
     return RawRunResult(records=records, errors=errors)
@@ -179,15 +193,16 @@ class BenchmarkRunner:
   ) -> RawResponseRecord:
     section_tasks = [
       asyncio.create_task(
-        self._execute_section(
+        self._execute_section_with_progress(
           questionnaire=questionnaire,
           section=section,
+          section_index=section_index,
           llm_id=llm_id,
           population_index=population_index,
           provider_semaphore=provider_semaphore,
         )
       )
-      for section in questionnaire.sections
+      for section_index, section in enumerate(questionnaire.sections)
     ]
     section_outcomes = await asyncio.gather(*section_tasks)
 
@@ -219,6 +234,7 @@ class BenchmarkRunner:
     *,
     questionnaire: Questionnaire,
     section: Section,
+    section_index: int,
     llm_id: str,
     population_index: int,
     provider_semaphore: asyncio.Semaphore,
@@ -275,6 +291,9 @@ class BenchmarkRunner:
           conversation,
           prompt,
           provider_semaphore,
+          llm_id=llm_id,
+          population_index=population_index,
+          section_index=section_index,
         )
       except ValidationFailedError as exc:
         error = self._question_error(
@@ -357,6 +376,33 @@ class BenchmarkRunner:
       first_query_time,
     )
 
+  async def _execute_section_with_progress(
+    self,
+    *,
+    questionnaire: Questionnaire,
+    section: Section,
+    section_index: int,
+    llm_id: str,
+    population_index: int,
+    provider_semaphore: asyncio.Semaphore,
+  ) -> tuple[dict[str, Any], list[RunnerError], Any]:
+    try:
+      return await self._execute_section(
+        questionnaire=questionnaire,
+        section=section,
+        section_index=section_index,
+        llm_id=llm_id,
+        population_index=population_index,
+        provider_semaphore=provider_semaphore,
+      )
+    finally:
+      if self._progress_display is not None:
+        self._progress_display.mark_section_completed(
+          llm_id,
+          population_index,
+          section_index,
+        )
+
   def _question_error(
     self,
     llm_id: str,
@@ -382,8 +428,18 @@ class BenchmarkRunner:
     conversation: LLMConversation,
     prompt: str,
     provider_semaphore: asyncio.Semaphore,
+    *,
+    llm_id: str,
+    population_index: int,
+    section_index: int,
   ) -> tuple[LLMResponse, Any]:
     async with provider_semaphore:
+      if self._progress_display is not None:
+        self._progress_display.mark_section_started(
+          llm_id,
+          population_index,
+          section_index,
+        )
       query_time = now_utc()
       response = await asyncio.to_thread(conversation.ask, prompt)
     return response, query_time

@@ -27,10 +27,12 @@ from rationale_benchmark.questionnaire import (
 )
 from rationale_benchmark.runner import (
   BenchmarkRunner,
+  QueryProgressDisplay,
   RawResponseRecord,
   RawRunResult,
   RunnerConfigError,
 )
+from rationale_benchmark.runner.progress_display import QueryProgressDisplayProtocol
 
 DEFAULT_CONFIG_DIR = Path("./config")
 DEFAULT_LLM_CONFIG = "default-llms"
@@ -239,12 +241,14 @@ def execute_benchmark(
   total_population: int | None = None,
   questionnaire_paths: Mapping[str, Path] | None = None,
   output_path: str | None = None,
+  progress_display: QueryProgressDisplayProtocol | None = None,
 ) -> RawRunResult:
   """Run the benchmark runner synchronously."""
   factory = ConversationFactory(configs)
   runner = BenchmarkRunner(
     factory,
     max_concurrency=max_concurrency,
+    progress_display=progress_display,
   )
   destination = Path(output_path) if output_path else None
   if destination is not None:
@@ -428,6 +432,11 @@ def main(
   )
 
   try:
+    progress_display = (
+      QueryProgressDisplay(stream=sys.stderr, interactive=True)
+      if sys.stderr.isatty()
+      else None
+    )
     result = execute_benchmark(
       questionnaire_objects,
       configs=configs,
@@ -439,6 +448,7 @@ def main(
         for selected, loaded in zip(selected_questionnaires, questionnaire_objects)
       },
       output_path=output,
+      progress_display=progress_display,
     )
   except RunnerConfigError as exc:
     raise click.ClickException(str(exc)) from exc
