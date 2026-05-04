@@ -229,6 +229,57 @@ class BlockingProvider(BaseProviderClient):
     )
 
 
+class AlwaysBlockingProvider(BaseProviderClient):
+  """Provider blocking every request so scheduler order can be inspected."""
+
+  def __init__(
+    self,
+    config: LLMConnectorConfig,
+    release_requests: threading.Event,
+  ) -> None:
+    super().__init__(config)
+    self._release_requests = release_requests
+
+  def _generate(
+    self,
+    messages: list[dict[str, str]],
+    *,
+    response_format: ResponseFormat,
+  ) -> ProviderResponse:
+    self._release_requests.wait(timeout=5)
+    return ProviderResponse(
+      content=json.dumps({"answer": 5}),
+      raw={"messages": messages},
+      metadata={},
+    )
+
+
+class AlwaysBlockingConversationFactory:
+  """Factory creating conversations that block until tests release them."""
+
+  def __init__(self, release_requests: threading.Event) -> None:
+    self._release_requests = release_requests
+
+  def create(
+    self,
+    model: str,
+    *,
+    system_prompt: str | None = None,
+  ) -> LLMConversation:
+    config = LLMConnectorConfig(
+      provider=ProviderType.OPENAI,
+      model=model,
+      api_key="test-key",
+      system_prompt=system_prompt,
+      response_format=ResponseFormat.JSON,
+    )
+    return LLMConversation(
+      config=config,
+      provider_client=AlwaysBlockingProvider(config, self._release_requests),
+      system_prompt=system_prompt,
+    )
+
+
 class BlockingConversationFactory:
   """Factory creating blocking conversations for concurrency progress tests."""
 
@@ -525,6 +576,49 @@ def test_progress_marks_only_queries_that_are_in_flight() -> None:
     assert display.started_count() == 1
   finally:
     release_first_request.set()
+    thread.join(timeout=5)
+
+  assert not thread.is_alive()
+  assert thread_errors == []
+
+
+def test_runner_prioritizes_population_then_sections_before_llms() -> None:
+  questionnaire = build_two_section_questionnaire()
+  display = RecordingProgressDisplay()
+  release_requests = threading.Event()
+  runner = BenchmarkRunner(
+    AlwaysBlockingConversationFactory(release_requests),
+    max_concurrency=6,
+    progress_display=display,
+  )
+  llm_ids = ["openai/gpt-4", "anthropic/claude", "gemini/pro"]
+  thread_errors: list[BaseException] = []
+
+  def run_runner() -> None:
+    try:
+      runner.run_sync(
+        questionnaire=questionnaire,
+        llm_ids=llm_ids,
+        total_population=2,
+      )
+    except BaseException as exc:
+      thread_errors.append(exc)
+
+  thread = threading.Thread(target=run_runner)
+  thread.start()
+  try:
+    deadline = time.time() + 5
+    while display.started_count() < 6 and time.time() < deadline:
+      time.sleep(0.01)
+
+    assert display.started_count() == 6
+    assert set(display.started_sections) == {
+      (llm_id, 0, section_index)
+      for section_index in range(2)
+      for llm_id in llm_ids
+    }
+  finally:
+    release_requests.set()
     thread.join(timeout=5)
 
   assert not thread.is_alive()

@@ -106,35 +106,76 @@ class BenchmarkRunner:
       )
 
     try:
+      records: list[RawResponseRecord] = []
+      errors: list[RunnerError] = []
+      record_state: dict[tuple[str, int], dict[str, Any]] = {
+        (llm_id, population_index): {
+          "sections": [None] * len(questionnaire.sections),
+          "errors": [],
+          "query_times": [],
+          "completed_sections": 0,
+        }
+        for llm_id in llm_ids
+        for population_index in range(population)
+      }
       tasks = [
         asyncio.create_task(
-          self._execute_questionnaire(
+          self._execute_section_job(
             questionnaire=questionnaire,
-            questionnaire_path=source_path,
+            section=section,
+            section_index=section_index,
             llm_id=llm_id,
             population_index=population_index,
             provider_semaphore=provider_semaphore,
-            output_path=destination,
-            write_lock=write_lock,
           )
         )
-        for llm_id in llm_ids
         for population_index in range(population)
+        for section_index, section in enumerate(questionnaire.sections)
+        for llm_id in llm_ids
       ]
 
-      records: list[RawResponseRecord] = []
-      errors: list[RunnerError] = []
-      for outcome in await asyncio.gather(*tasks, return_exceptions=True):
-        if isinstance(outcome, Exception):
+      for completed_task in asyncio.as_completed(tasks):
+        try:
+          (
+            llm_id,
+            population_index,
+            section_index,
+            section_payload,
+            section_errors,
+            first_query_time,
+          ) = await completed_task
+        except Exception as exc:
           error = RunnerError(
             llm_id="",
             stage="runtime",
-            message=str(outcome),
+            message=str(exc),
           )
           errors.append(error)
           continue
-        records.append(outcome)
-        errors.extend(outcome.errors)
+
+        state = record_state[(llm_id, population_index)]
+        state["sections"][section_index] = section_payload
+        state["errors"].extend(section_errors)
+        if first_query_time is not None:
+          state["query_times"].append(first_query_time)
+        state["completed_sections"] += 1
+        if state["completed_sections"] != len(questionnaire.sections):
+          continue
+
+        query_times = state["query_times"]
+        record = RawResponseRecord(
+          questionnaire_name=questionnaire.id,
+          questionnaire_path=source_path,
+          llm_id=llm_id,
+          population_index=population_index,
+          query_time=min(query_times) if query_times else now_utc(),
+          response={"sections": state["sections"]},
+          errors=state["errors"],
+        )
+        if destination is not None:
+          await self._append_jsonl(record, destination, write_lock)
+        records.append(record)
+        errors.extend(record.errors)
     except asyncio.CancelledError:
       if self._progress_display is not None:
         self._progress_display.mark_unfinished_error(INTERRUPTED_PROGRESS_MESSAGE)
@@ -195,54 +236,41 @@ class BenchmarkRunner:
     with output_path.open("a", encoding="utf-8"):
       pass
 
-  async def _execute_questionnaire(
+  async def _execute_section_job(
     self,
     *,
     questionnaire: Questionnaire,
-    questionnaire_path: Path | None,
+    section: Section,
+    section_index: int,
     llm_id: str,
     population_index: int,
     provider_semaphore: asyncio.Semaphore,
-    output_path: Path | None,
-    write_lock: asyncio.Lock,
-  ) -> RawResponseRecord:
-    section_tasks = [
-      asyncio.create_task(
-        self._execute_section_with_progress(
-          questionnaire=questionnaire,
-          section=section,
-          section_index=section_index,
-          llm_id=llm_id,
-          population_index=population_index,
-          provider_semaphore=provider_semaphore,
-        )
+  ) -> tuple[
+    str,
+    int,
+    int,
+    dict[str, Any],
+    list[RunnerError],
+    Any,
+  ]:
+    section_payload, section_errors, first_query_time = (
+      await self._execute_section_with_progress(
+        questionnaire=questionnaire,
+        section=section,
+        section_index=section_index,
+        llm_id=llm_id,
+        population_index=population_index,
+        provider_semaphore=provider_semaphore,
       )
-      for section_index, section in enumerate(questionnaire.sections)
-    ]
-    section_outcomes = await asyncio.gather(*section_tasks)
-
-    sections: list[dict[str, Any]] = []
-    errors: list[RunnerError] = []
-    query_times = []
-    for section_payload, section_errors, first_query_time in section_outcomes:
-      sections.append(section_payload)
-      errors.extend(section_errors)
-      if first_query_time is not None:
-        query_times.append(first_query_time)
-
-    query_time = min(query_times) if query_times else now_utc()
-    record = RawResponseRecord(
-      questionnaire_name=questionnaire.id,
-      questionnaire_path=questionnaire_path,
-      llm_id=llm_id,
-      population_index=population_index,
-      query_time=query_time,
-      response={"sections": sections},
-      errors=errors,
     )
-    if output_path is not None:
-      await self._append_jsonl(record, output_path, write_lock)
-    return record
+    return (
+      llm_id,
+      population_index,
+      section_index,
+      section_payload,
+      section_errors,
+      first_query_time,
+    )
 
   async def _execute_section(
     self,

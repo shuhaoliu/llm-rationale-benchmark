@@ -239,6 +239,12 @@ independent administrations per LLM, keeping at most `parallel_sessions`
 in-flight simultaneously. Each administration starts from a fresh context and
 uses the same `system_prompt`.
 
+The scheduler prioritizes the first wave of work across population instances,
+then across questionnaire section rounds, and finally across LLMs. For example,
+with 2 population instances, 2 sections, 3 LLMs, and `parallel_sessions` set to
+6, the first 6 in-flight requests target every LLM for both sections of
+population instance 0 before starting population instance 1.
+
 Sections within a questionnaire are independent. The runner may send different
 sections to an LLM concurrently, and section requests must not include
 question-answer pairs from other sections in their context.
@@ -282,8 +288,8 @@ distributed across the population.
   without data loss (excluding comment formatting).
 - Population dispatch tests mock the LLM client and assert that exactly
   `total_population` complete administrations are requested with at most
-  `parallel_sessions` in-flight at any point, verifying both the count and the
-  concurrency ceiling.
+  `parallel_sessions` in-flight at any point, verifying the count, concurrency
+  ceiling, and population-before-section-before-LLM scheduling order.
 - Population resolution tests assert that a valid positive CLI
   `--total-population` overrides `metadata.default_population`, and that the
   metadata default is used when the CLI value is absent.
