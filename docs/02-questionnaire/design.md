@@ -21,7 +21,9 @@ questionnaire:
   description: "..."            # optional, shown in CLI help
   version: 1                    # integer incremented on schema changes
   system_prompt: |              # required system prompt passed to LLMs
-    You are a neutral assistant administering the burnout inventory.
+    You are participating in an interview.
+    Answer each question as yourself.
+    Follow the requested answer format and do not provide explanations.
   metadata:                     # required metadata and provenance values
     default_population: 5       # fallback if CLI --total-population is absent
     author: "Psych Lab"

@@ -111,7 +111,9 @@ questionnaire:
   description: "Measuring perceived burnout."
   version: 1
   system_prompt: |
-    You are a neutral assistant administering the burnout inventory.
+    You are participating in an interview.
+    Answer each question as yourself.
+    Follow the requested answer format and do not provide explanations.
   metadata:
     default_population: 5
     author: "Psych Lab"

@@ -20,7 +20,9 @@ questionnaire:
   description: "Measuring perceived burnout in knowledge workers."
   version: 1
   system_prompt: |
-    You are a neutral assistant administering the burnout inventory.
+    You are participating in an interview.
+    Answer each question as yourself.
+    Follow the requested answer format and do not provide explanations.
   metadata:
     default_population: 5
     author: "Psych Lab"
@@ -43,6 +45,10 @@ questionnaire:
   info.
 
 ### Define the System Prompt
+- Write the prompt for the LLM as the interview participant, not as the
+  questionnaire administrator.
+- Do not reveal the construct, bias, or hypothesis being measured by the
+  questionnaire unless the original participant-facing protocol does so.
 - Keep prompts concise but explicit about tone, safety guidance, and answer format.
 - Use YAML block scalars (`|`) for multi-line prompts so line breaks are preserved.
 - Treat the prompt as required protocol wording shared by all models.

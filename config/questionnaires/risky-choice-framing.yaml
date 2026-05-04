@@ -1,0 +1,880 @@
+questionnaire:
+  id: "risky-choice-framing"
+  name: "Risky Choice Framing"
+  description: "Risky-choice framing items from the RiskyChoiceFraming sheet of Turing-Test-Materials.xlsx."
+  version: 1
+  system_prompt: |
+    You are participating in an interview.
+    Answer each question as yourself by choosing either Plan A or Plan B.
+    Follow the requested answer format and do not provide explanations.
+  metadata:
+    default_population: 1
+    author: "Benchmark Curation Team"
+    source: "config/questionnaires/Turing-Test-Materials.xlsx, RiskyChoiceFraming sheet"
+    response_type: "Option"
+    scoring: "Plan A=0, Plan B=1; population averages measure the proportion choosing Plan B."
+  sections:
+    - name: "Group size sensitivity for human lives-P-6life"
+      human:
+        average: 0.64
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "1-P-6life"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 people will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 people will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-N-6life"
+      human:
+        average: 0.7
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "2-N-6life"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 people will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 people will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-P-60life"
+      human:
+        average: 0.675
+        population: 40
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "3-P-60life"
+          type: "choice"
+          prompt: |
+            Imagine that 60 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 20 people will be saved.
+            If Plan B is adopted, there is a one-third probability that all 60 people will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-N-60life"
+      human:
+        average: 0.65
+        population: 40
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "4-N-60life"
+          type: "choice"
+          prompt: |
+            Imagine that 60 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 40 people will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 60 people will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-P-600life"
+      human:
+        average: 0.4
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "5-P-600life"
+          type: "choice"
+          prompt: |
+            Imagine that 600 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 200 people will be saved.
+            If Plan B is adopted, there is a one-third probability that all 600 people will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-N-600life"
+      human:
+        average: 0.68
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "6-N-600life"
+          type: "choice"
+          prompt: |
+            Imagine that 600 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 400 people will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 600 people will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-P-6000life"
+      human:
+        average: 0.409090909091
+        population: 44
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "7-P-6000life"
+          type: "choice"
+          prompt: |
+            Imagine that 6000 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2000 people will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6000 people will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for human lives-N-6000life"
+      human:
+        average: 0.613636363636
+        population: 44
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "8-N-6000life"
+          type: "choice"
+          prompt: |
+            Imagine that 6000 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4000 people will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6000 people will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-P-1kin"
+      human:
+        average: 0.44
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "1-P-1kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family, including one of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 of them will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-N-1kin"
+      human:
+        average: 0.76
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "2-N-1kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family, including one of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 of them will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-P-2kin"
+      human:
+        average: 0.48
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "3-P-2kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family, including both of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 of them will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-N-2kin"
+      human:
+        average: 0.74
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "4-N-2kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family, including both of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 of them will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-P-3kin"
+      human:
+        average: 0.66
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "5-P-3kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family including your parents, and one of your brothers or sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 of them will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-N-3kin"
+      human:
+        average: 0.72
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "6-N-3kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family including your parents, and one of your brothers or sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 of them will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-P-6kin"
+      human:
+        average: 0.7
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "7-P-6kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family, including both of your parents, your brothers, and your sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 of them will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Kin constituent in a mixed group of six-N-6kin"
+      human:
+        average: 0.7
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "8-N-6kin"
+          type: "choice"
+          prompt: |
+            Imagine that 6 people in your family, including both of your parents, your brothers, and your sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 of them will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Human population vs. ET population-P-Human"
+      human:
+        average: 0.36
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "1-P-Human"
+          type: "choice"
+          prompt: |
+            Imagine that 6 billion humans are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 billion humans will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 billion humans will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Human population vs. ET population-N-Human"
+      human:
+        average: 0.66
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "2-N-Human"
+          type: "choice"
+          prompt: |
+            Imagine that 6 billion humans are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 billion humans will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 billion humans will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Human population vs. ET population-P-Alien"
+      human:
+        average: 0.52
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "3-P-Alien"
+          type: "choice"
+          prompt: |
+            Imagine that 6 billion aliens are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 2 billion aliens will be saved.
+            If Plan B is adopted, there is a one-third probability that all 6 billion aliens will be saved and a two-thirds probability that none of them will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Human population vs. ET population-N-Alien"
+      human:
+        average: 0.52
+        population: 50
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "4-N-Alien"
+          type: "choice"
+          prompt: |
+            Imagine that 6 billion aliens are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
+            If Plan A is adopted, 4 billion aliens will die.
+            If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 billion aliens will die.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-P-6painting"
+      human:
+        average: 0.377777777778
+        population: 45
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "1-P-6painting"
+          type: "choice"
+          prompt: |
+            Imagine that 6 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 2 pieces will be saved from chemical pollution.
+            If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-N-6painting"
+      human:
+        average: 0.609756097561
+        population: 41
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "2-N-6painting"
+          type: "choice"
+          prompt: |
+            Imagine that 6 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 4 pieces will be destroyed by chemical pollution.
+            If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-P-60painting"
+      human:
+        average: 0.244444444444
+        population: 45
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "3-P-60painting"
+          type: "choice"
+          prompt: |
+            Imagine that 60 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 20 pieces will be saved from chemical pollution.
+            If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-N-60painting"
+      human:
+        average: 0.55
+        population: 40
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "4-N-60painting"
+          type: "choice"
+          prompt: |
+            Imagine that 60 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 40 pieces will be destroyed by chemical pollution.
+            If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-P-600painting"
+      human:
+        average: 0.307692307692
+        population: 39
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "5-P-600painting"
+          type: "choice"
+          prompt: |
+            Imagine that 600 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 200 pieces will be saved from chemical pollution.
+            If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-N-600painting"
+      human:
+        average: 0.341463414634
+        population: 41
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "6-N-600painting"
+          type: "choice"
+          prompt: |
+            Imagine that 600 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 400 pieces will be destroyed by chemical pollution.
+            If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-P-6000painting"
+      human:
+        average: 0.184210526316
+        population: 38
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "7-P-6000painting"
+          type: "choice"
+          prompt: |
+            Imagine that 6000 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 2000 pieces will be saved from chemical pollution.
+            If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for public properties-N-6000painting"
+      human:
+        average: 0.394736842105
+        population: 38
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "8-N-6000painting"
+          type: "choice"
+          prompt: |
+            Imagine that 6000 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
+            If you choose Plan A, 4000 pieces will be destroyed by chemical pollution.
+            If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-P-6dollar"
+      human:
+        average: 0.483870967742
+        population: 31
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "1-P-6dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $6 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will save $2 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-N-6dollar"
+      human:
+        average: 0.41935483871
+        population: 31
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "2-N-6dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $6 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will lose $4 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-P-60dollar"
+      human:
+        average: 0.428571428571
+        population: 35
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "3-P-60dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $60 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will save $20 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-N-60dollar"
+      human:
+        average: 0.515151515152
+        population: 33
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "4-N-60dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $60 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will lose $40 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-P-600dollar"
+      human:
+        average: 0.21875
+        population: 32
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "5-P-600dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $600 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will save $200 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-N-600dollar"
+      human:
+        average: 0.354838709677
+        population: 31
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "6-N-600dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $600 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will lose $400 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-P-6000dollar"
+      human:
+        average: 0.083333333333
+        population: 36
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "7-P-6000dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $6000 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will save $2000 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
+    - name: "Group size sensitivity for personal stocks-N-6000dollar"
+      human:
+        average: 0.333333333333
+        population: 30
+      instructions: |
+        In this case, you need to make a choice directly.
+        Please output your answer in the following format:
+        Your choice - Plan (either A or B)
+        There is no right or wrong answer. Please output your answer directly without any explanations.
+      questions:
+        - id: "8-N-6000dollar"
+          type: "choice"
+          prompt: |
+            Imagine that you bought $6000 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
+            If you choose Plan A, you will lose $4000 of your money.
+            If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
