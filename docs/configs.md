@@ -117,6 +117,9 @@ questionnaire:
     author: "Psych Lab"
   sections:
     - name: "Workload"
+      human:
+        average: 18.6
+        population: 128
       instructions: "Rate the statements."
       questions:
         - id: "workload_01"
@@ -135,6 +138,13 @@ questionnaire:
 - `metadata.default_population`: positive integer fallback used when the CLI
   does not provide `--total-population`.
 
+### Section Requirements
+- `name`: unique section label within the questionnaire.
+- `human`: optional known human baseline. `human.average` is the average human
+  section score, and `human.population` is the positive number of collected
+  human answers.
+- `questions`: non-empty list of question declarations.
+
 ### Question Requirements
 - Supported `type` values: `rating-5`, `rating-7`, `rating-11`, `choice`.
 - `options` required for `choice` questions, mapping keys to labels.
@@ -145,8 +155,9 @@ questionnaire:
 ### Validation Pipeline
 1. **Schema validation** ensures types and required keys are present.
 2. **Semantic validation** enforces unique IDs, weight lengths, option coverage,
-   numeric ranges (`0 ≤ weight ≤ total`), and positive
-   `metadata.default_population`.
+   numeric ranges (`0 ≤ weight ≤ total`), positive
+   `metadata.default_population`, and positive `human.population` when a human
+   baseline is provided.
 3. **(Planned)** Cross-file validation guards against duplicate questionnaire
    IDs and version regressions.
 

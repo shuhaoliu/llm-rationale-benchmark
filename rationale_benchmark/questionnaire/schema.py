@@ -20,8 +20,16 @@ class QuestionSchema(BaseModel):
   model_config = ConfigDict(extra="forbid")
 
 
+class HumanBaselineSchema(BaseModel):
+  average: float
+  population: int
+
+  model_config = ConfigDict(extra="forbid")
+
+
 class SectionSchema(BaseModel):
   name: str
+  human: HumanBaselineSchema | None = None
   instructions: str | None = None
   questions: list[QuestionSchema] = Field(..., min_length=1)
 

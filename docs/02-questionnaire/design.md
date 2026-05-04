@@ -29,6 +29,9 @@ questionnaire:
 
   sections:
     - name: "Workload"
+      human:
+        average: 18.6
+        population: 128
       instructions: "Rate how often..."  # optional helper copy
       questions:
         - id: "workload_01"
@@ -54,6 +57,9 @@ questionnaire:
 
 #### Section Requirements
 - `name`: unique within the questionnaire.
+- `human`: optional human baseline with `average` and `population`.
+  - `average`: average human score for the section.
+  - `population`: positive integer count of collected human answers.
 - `instructions`: optional text surfaced in the UI/CLI before the section.
 - `questions`: non-empty list of question declarations.
 
@@ -111,6 +117,7 @@ friendly error messages.
    - Scoring definitions must match the declared `QuestionType` (e.g., rating
      questions may not supply option maps).
    - `metadata.default_population` must be present and positive.
+   - `human.population`, when present, must be positive.
    - CLI `--total-population`, when provided, must be positive.
    - Metadata fields must adhere to documented shapes.
 3. **Cross-file validation** (optional future enhancement) to verify that
@@ -138,10 +145,16 @@ class Question:
   scoring: ScoringRule
 
 @dataclass
+class HumanBaseline:
+  average: float
+  population: int
+
+@dataclass
 class Section:
   name: str
   instructions: str | None
   questions: list[Question]
+  human: HumanBaseline | None
 
 @dataclass
 class Questionnaire:

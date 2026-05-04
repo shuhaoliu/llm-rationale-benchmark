@@ -32,10 +32,16 @@ class Question:
   scoring: ScoringRule
 
 @dataclass
+class HumanBaseline:
+  average: float
+  population: int
+
+@dataclass
 class Section:
   name: str
   instructions: str | None
   questions: list[Question]
+  human: HumanBaseline | None = None
 
 @dataclass
 class Questionnaire:

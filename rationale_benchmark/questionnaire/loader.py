@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +8,14 @@ import yaml
 from pydantic import ValidationError
 
 from .errors import QuestionnaireConfigError
-from .models import Question, Questionnaire, QuestionType, ScoringRule, Section
+from .models import (
+  HumanBaseline,
+  Question,
+  Questionnaire,
+  QuestionType,
+  ScoringRule,
+  Section,
+)
 from .schema import (
   QuestionnaireFileSchema,
   QuestionnaireSchema,
@@ -141,7 +148,7 @@ def _build_questionnaire(
   )
 
 
-def _extract_default_population(metadata: dict[str, object], path: Path) -> int:
+def _extract_default_population(metadata: Mapping[str, object], path: Path) -> int:
   location = "questionnaire.metadata.default_population"
   value = metadata.get("default_population")
   if not isinstance(value, int) or isinstance(value, bool) or value < 1:
@@ -165,15 +172,41 @@ def _build_sections(sections: list[SectionSchema], path: Path) -> list[Section]:
         location=f"{location}.name",
       )
     seen_names.add(section_schema.name)
+    human = _build_human_baseline(section_schema, path, location)
     questions = _build_questions(section_schema.questions, path, location)
     built_sections.append(
       Section(
         name=section_schema.name,
         instructions=section_schema.instructions,
         questions=questions,
+        human=human,
       )
     )
   return built_sections
+
+
+def _build_human_baseline(
+  section_schema: SectionSchema,
+  path: Path,
+  location: str,
+) -> HumanBaseline | None:
+  if section_schema.human is None:
+    return None
+  population = section_schema.human.population
+  if (
+    not isinstance(population, int)
+    or isinstance(population, bool)
+    or population < 1
+  ):
+    raise QuestionnaireConfigError(
+      "human.population must be a positive integer",
+      file_path=str(path),
+      location=f"{location}.human.population",
+    )
+  return HumanBaseline(
+    average=section_schema.human.average,
+    population=population,
+  )
 
 
 def _build_questions(

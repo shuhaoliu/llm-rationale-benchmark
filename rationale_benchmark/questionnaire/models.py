@@ -36,10 +36,17 @@ class Question:
 
 
 @dataclass(frozen=True)
+class HumanBaseline:
+  average: float
+  population: int
+
+
+@dataclass(frozen=True)
 class Section:
   name: str
   instructions: str | None
   questions: list[Question]
+  human: HumanBaseline | None = None
 
 
 @dataclass(frozen=True)

@@ -54,11 +54,17 @@ sent to an LLM concurrently.
 ```yaml
   sections:
     - name: "Workload"
+      human:
+        average: 18.6
+        population: 128
       instructions: "Rate how often each statement feels true."
       questions: []
 ```
 
 - `name`: unique within the questionnaire.
+- `human`: optional known human baseline for the section. `average` is the
+  average human score for the section, and `population` is the positive count of
+  human answers collected for that section.
 - `instructions`: optional helper text shown before the section.
 - `questions`: populate next.
 - Section requests must not include question-answer pairs from other sections in
@@ -203,6 +209,8 @@ uv run rationale-benchmark \
 
 ## 11. Checklist Before Commit
 - [ ] All sections and questions have unique IDs.
+- [ ] Known section-level human baselines are recorded under `human.average`
+      and `human.population`.
 - [ ] Every question defines `scoring.total` and `scoring.weights`.
 - [ ] Rating weight lists include exactly one entry per rating value.
 - [ ] Choice weights cover every option key.

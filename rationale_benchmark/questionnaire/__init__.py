@@ -6,6 +6,7 @@ from .loader import (
   load_questionnaire_file,
 )
 from .models import (
+  HumanBaseline,
   Question,
   Questionnaire,
   QuestionScore,
@@ -16,6 +17,7 @@ from .models import (
 from .scoring import score_question, validate_answer
 
 __all__ = [
+  "HumanBaseline",
   "Question",
   "QuestionScore",
   "QuestionType",

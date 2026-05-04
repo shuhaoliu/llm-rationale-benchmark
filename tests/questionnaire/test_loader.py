@@ -41,6 +41,9 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
         author: "Psych Lab"
       sections:
         - name: "Workload"
+          human:
+            average: 6.4
+            population: 128
           instructions: "Rate how often..."
           questions:
             - id: "workload_01"
@@ -76,6 +79,9 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
   assert len(questionnaire.sections) == 1
   section = questionnaire.sections[0]
   assert section.name == "Workload"
+  assert section.human is not None
+  assert section.human.average == 6.4
+  assert section.human.population == 128
   assert len(section.questions) == 2
   rating = section.questions[0]
   assert rating.scoring.weights == {
@@ -167,6 +173,36 @@ def test_non_positive_default_population_raises(questionnaire_dir: Path) -> None
   with pytest.raises(QuestionnaireConfigError) as error:
     load_questionnaire("bad-population", questionnaire_dir.parent)
   assert error.value.location == "questionnaire.metadata.default_population"
+
+
+def test_non_positive_human_population_raises(questionnaire_dir: Path) -> None:
+  _write_yaml(
+    questionnaire_dir,
+    "bad-human-population",
+    """
+    questionnaire:
+      id: "bad-human-population"
+      name: "Bad Human Population"
+      system_prompt: "You answer using short sentences."
+      metadata:
+        default_population: 1
+      sections:
+        - name: "Only"
+          human:
+            average: 3.5
+            population: 0
+          questions:
+            - id: "q1"
+              type: "rating-5"
+              prompt: "Prompt"
+              scoring:
+                total: 5
+                weights: [0, 1, 2, 3, 4]
+    """,
+  )
+  with pytest.raises(QuestionnaireConfigError) as error:
+    load_questionnaire("bad-human-population", questionnaire_dir.parent)
+  assert error.value.location == "questionnaire.sections[0].human.population"
 
 
 def test_duplicate_question_id_raises(questionnaire_dir: Path) -> None:
