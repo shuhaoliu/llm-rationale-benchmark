@@ -154,7 +154,7 @@ def load_llm_configurations(
     raise CliConfigurationError(f"LLM configuration directory missing: {llm_dir}")
   config_path = llm_dir / f"{llm_config}.yaml"
   loader = ConnectorConfigLoader()
-  return loader.load(config_path)
+  return loader.load(config_path, merge_default=False)
 
 
 def select_models(

@@ -56,8 +56,9 @@ and display a concise error along with the usage text.
 - `config_dir` defaults to `cwd/config`; `--config-dir` allows custom roots.
 - Questionnaire directory: `${config_dir}/questionnaires/`. Files must end with
   `.yaml`. IDs equal filename stems (`moral-reasoning.yaml` → `moral-reasoning`).
-- LLM configuration directory: `${config_dir}/llms/`. `default-llms.yaml` must
-  exist. Overrides merge onto the default per rules in `docs/configs.md`.
+- LLM configuration directory: `${config_dir}/llms/`. `default-llms.yaml` is
+  used only when `--llm-config` is omitted or set to `default-llms`. Selecting
+  another file runs only the providers and models declared in that file.
 - Environment variable placeholders (`${ENV_VAR}`) resolve during load; missing
   variables raise `ConfigurationError` before execution.
 - Listing commands (`--list-questionnaires`, `--list-llm-configs`) reuse the
@@ -81,7 +82,8 @@ and display a concise error along with the usage text.
   metadata default for the current run.
 
 ## LLM Configuration Semantics
-- Always load `default-llms.yaml`; overlay the file named by `--llm-config`.
+- Load the file named by `--llm-config`; do not merge models from other LLM
+  configuration files.
 - Validate provider keys, required fields, and environment substitution as
   described in `docs/01-llm/design.md` and `docs/configs.md`.
 - If `--models` is provided, filter the merged configuration to the specified

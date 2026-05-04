@@ -212,6 +212,52 @@ def test_output_option_writes_jsonl_file(
   assert records[0]["questionnaire"]["name"] == "sample"
 
 
+def test_explicit_llm_config_does_not_merge_default_models(
+  tmp_path: Path,
+  runner: CliRunner,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _write_questionnaire(tmp_path, "sample")
+  _write_llm_config(tmp_path)
+  llm_path = tmp_path / "llms" / "aliyun.yaml"
+  llm_path.write_text(
+    dedent(
+      """
+      defaults:
+        response_format: text
+      providers:
+        aliyun_openai_compatible:
+          api_key: "test"
+          base_url: "https://example.test/v1"
+          models:
+            - "qwen-test"
+      """
+    ),
+    encoding="utf-8",
+  )
+  monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
+
+  result = runner.invoke(
+    main,
+    [
+      "--config-dir",
+      str(tmp_path),
+      "--questionnaire",
+      "sample",
+      "--llm-config",
+      "aliyun",
+      "--total-population",
+      "1",
+    ],
+  )
+
+  assert result.exit_code == 0
+  records = _jsonl_records(result.output)
+  assert [record["llm_id"] for record in records] == [
+    "aliyun_openai_compatible/qwen-test"
+  ]
+
+
 def test_parallel_sessions_option_is_not_supported(
   tmp_path: Path,
   runner: CliRunner,

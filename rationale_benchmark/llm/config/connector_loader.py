@@ -38,10 +38,15 @@ class ConnectorConfigLoader:
     path: Path,
     *,
     base_path: Path | None = None,
+    merge_default: bool = True,
   ) -> Dict[str, LLMConnectorConfig]:
     """Return validated connector configurations from the supplied YAML file."""
 
-    merged = self._load_and_merge(path, base_path=base_path)
+    merged = self._load_and_merge(
+      path,
+      base_path=base_path,
+      merge_default=merge_default,
+    )
     return self._build_configurations(merged, source_path=path)
 
   def _load_and_merge(
@@ -49,11 +54,12 @@ class ConnectorConfigLoader:
     path: Path,
     *,
     base_path: Path | None,
+    merge_default: bool,
   ) -> dict[str, Any]:
     overlay = self._read_document(path)
 
     candidate_base = base_path
-    if candidate_base is None:
+    if merge_default and candidate_base is None:
       default_candidate = path.with_name(self.base_filename)
       if default_candidate.exists() and default_candidate != path:
         candidate_base = default_candidate
