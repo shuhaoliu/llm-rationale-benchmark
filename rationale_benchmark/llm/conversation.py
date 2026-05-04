@@ -15,6 +15,7 @@ from .exceptions import (
   LLMConnectorError,
   RetryableProviderError,
   StreamingNotSupportedError,
+  TimeoutError,
   ValidationFailedError,
 )
 from .provider_client import BaseProviderClient, ProviderResponse
@@ -155,6 +156,13 @@ class LLMConversation:
           raise LLMConnectorError(str(exc)) from exc
         self._sleep_for_attempt(attempt, retry_after=exc.retry_after)
         continue
+      except TimeoutError as exc:
+        last_error = exc
+        self._stats["retryable_errors"] += 1
+        if attempt == attempts_allowed:
+          raise LLMConnectorError(str(exc)) from exc
+        self._sleep_for_attempt(attempt)
+        continue
 
       assistant_turn = ConversationTurn(
         role="assistant",
@@ -233,6 +241,12 @@ class LLMConversation:
       metadata=metadata,
     )
 
+  @property
+  def provider_attempts(self) -> int:
+    """Return the total number of provider attempts made so far."""
+
+    return self._stats["provider_attempts"]
+
   def _invoke_provider(self) -> ProviderResponse:
     messages = [
       {
@@ -277,4 +291,3 @@ class LLMConversation:
     if self.config.retry.jitter:
       delay += random.uniform(0, self.config.retry.jitter)
     self._sleep_fn(delay)
-

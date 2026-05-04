@@ -2,7 +2,7 @@
 # This file provides base configuration and defaults for all LLM providers
 
 defaults:
-  timeout: 0
+  timeout: 60
   max_retries: 3
   temperature: 0.8
   max_tokens: 1024
@@ -13,7 +13,7 @@ providers:
     api_key: "${DASHSCOPE_API_KEY}"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     models:
-      - "qwen3.6-plus"
+      #- "qwen3.6-plus"
       - "qwen3.5-plus"
-      - "deepseek-v4-pro"
-      - "glm-5.1"
+      #- "deepseek-v4-pro"
+      #- "glm-5.1"

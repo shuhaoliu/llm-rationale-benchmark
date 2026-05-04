@@ -45,6 +45,10 @@ class JSONHTTPProvider(BaseProviderClient):
         text = resp.read().decode("utf-8")
         parsed = self._safe_load_json(text)
         return parsed, dict(resp.headers)
+    except socket.timeout as exc:
+      raise ConnectorTimeoutError(
+        timeout_seconds=self.config.timeout_seconds
+      ) from exc
     except error.HTTPError as exc:
       body = exc.read().decode("utf-8", "ignore")
       parsed = self._safe_load_json(body)

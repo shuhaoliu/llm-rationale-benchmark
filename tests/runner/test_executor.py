@@ -14,7 +14,11 @@ from rationale_benchmark.llm.config.connector_models import (
   ResponseFormat,
 )
 from rationale_benchmark.llm.conversation import LLMConversation
-from rationale_benchmark.llm.exceptions import ConfigurationError, LLMConnectorError
+from rationale_benchmark.llm.exceptions import (
+  ConfigurationError,
+  LLMConnectorError,
+  TimeoutError,
+)
 from rationale_benchmark.llm.provider_client import BaseProviderClient, ProviderResponse
 from rationale_benchmark.questionnaire.models import (
   Question,
@@ -137,6 +141,104 @@ class ErrorConversationFactory:
       config=config,
       provider_client=ErrorProvider(config),
       system_prompt=system_prompt,
+    )
+
+
+class TimeoutThenSuccessProvider(BaseProviderClient):
+  """Provider timing out once before returning a successful answer."""
+
+  def __init__(self, config: LLMConnectorConfig) -> None:
+    super().__init__(config)
+    self.calls = 0
+
+  def _generate(
+    self,
+    messages: list[dict[str, str]],
+    *,
+    response_format: ResponseFormat,
+  ) -> ProviderResponse:
+    self.calls += 1
+    if self.calls == 1:
+      raise TimeoutError("Request timed out", timeout_seconds=30)
+    return ProviderResponse(
+      content=json.dumps({"answer": 5}),
+      raw={"messages": messages},
+      metadata={"request_index": self.calls},
+    )
+
+
+class AlwaysTimeoutProvider(BaseProviderClient):
+  """Provider timing out on every request."""
+
+  def __init__(self, config: LLMConnectorConfig) -> None:
+    super().__init__(config)
+    self.calls = 0
+
+  def _generate(
+    self,
+    messages: list[dict[str, str]],
+    *,
+    response_format: ResponseFormat,
+  ) -> ProviderResponse:
+    self.calls += 1
+    raise TimeoutError("The read operation timed out", timeout_seconds=30)
+
+
+class TimeoutThenSuccessConversationFactory:
+  """Factory creating conversations that recover after a timeout."""
+
+  def __init__(self) -> None:
+    self.providers: list[TimeoutThenSuccessProvider] = []
+
+  def create(
+    self,
+    model: str,
+    *,
+    system_prompt: str | None = None,
+  ) -> LLMConversation:
+    config = LLMConnectorConfig(
+      provider=ProviderType.OPENAI,
+      model=model,
+      api_key="test-key",
+      system_prompt=system_prompt,
+      response_format=ResponseFormat.JSON,
+    )
+    provider = TimeoutThenSuccessProvider(config)
+    self.providers.append(provider)
+    return LLMConversation(
+      config=config,
+      provider_client=provider,
+      system_prompt=system_prompt,
+      sleep_fn=lambda _delay: None,
+    )
+
+
+class AlwaysTimeoutConversationFactory:
+  """Factory creating conversations that exhaust timeout retries."""
+
+  def __init__(self) -> None:
+    self.providers: list[AlwaysTimeoutProvider] = []
+
+  def create(
+    self,
+    model: str,
+    *,
+    system_prompt: str | None = None,
+  ) -> LLMConversation:
+    config = LLMConnectorConfig(
+      provider=ProviderType.OPENAI,
+      model=model,
+      api_key="test-key",
+      system_prompt=system_prompt,
+      response_format=ResponseFormat.JSON,
+    )
+    provider = AlwaysTimeoutProvider(config)
+    self.providers.append(provider)
+    return LLMConversation(
+      config=config,
+      provider_client=provider,
+      system_prompt=system_prompt,
+      sleep_fn=lambda _delay: None,
     )
 
 
@@ -361,6 +463,34 @@ def build_questionnaire(default_population: int = 1) -> Questionnaire:
   )
 
 
+def build_single_rating_questionnaire() -> Questionnaire:
+  rating_question = Question(
+    id="rating-1",
+    type=QuestionType.RATING_5,
+    prompt="Rate helpfulness from 1 to 5.",
+    options=None,
+    scoring=ScoringRule(
+      total=5,
+      weights={str(value): value for value in range(1, 6)},
+    ),
+  )
+  section = Section(
+    name="General",
+    instructions="Answer each question carefully.",
+    questions=[rating_question],
+  )
+  return Questionnaire(
+    id="single-rating-questionnaire",
+    name="Single Rating Questionnaire",
+    description=None,
+    version=1,
+    metadata={"default_population": 1},
+    default_population=1,
+    system_prompt="System prompt",
+    sections=[section],
+  )
+
+
 def build_two_section_questionnaire() -> Questionnaire:
   return Questionnaire(
     id="two-section",
@@ -519,6 +649,50 @@ def test_runner_retries_when_canonicalization_fails(tmp_path: Path) -> None:
     "a",
   ]
   assert "not allowed" in choice_attempts[0]["validation_error"]
+
+
+def test_runner_retries_timeouts_before_recording_error(tmp_path: Path) -> None:
+  questionnaire = build_single_rating_questionnaire()
+  output_dir = tmp_path / "timeout-retry-output"
+  factory = TimeoutThenSuccessConversationFactory()
+  runner = BenchmarkRunner(factory, max_concurrency=1)
+
+  result = runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    output_path=output_dir,
+  )
+
+  assert result.errors == []
+  assert len(factory.providers) == 1
+  assert factory.providers[0].calls == 2
+  record = read_jsonl(output_dir / "responses.jsonl")[0]
+  assert record["response"]["sections"][0]["questions"][0]["response"] == "5"
+  assert record["response"]["sections"][0]["questions"][0]["errors"] == []
+
+
+def test_runner_records_retry_count_when_timeouts_are_exhausted(
+  tmp_path: Path,
+) -> None:
+  questionnaire = build_single_rating_questionnaire()
+  output_dir = tmp_path / "timeout-error-output"
+  factory = AlwaysTimeoutConversationFactory()
+  runner = BenchmarkRunner(factory, max_concurrency=1)
+
+  result = runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    output_path=output_dir,
+  )
+
+  assert len(factory.providers) == 1
+  assert factory.providers[0].calls == 3
+  assert len(result.errors) == 1
+  assert result.errors[0].retry_count == 2
+  record = read_jsonl(output_dir / "responses.jsonl")[0]
+  question_error = record["response"]["sections"][0]["questions"][0]["errors"][0]
+  assert question_error["message"] == "The read operation timed out"
+  assert question_error["retry_count"] == 2
 
 
 def test_runner_creates_records_for_each_llm_and_population() -> None:

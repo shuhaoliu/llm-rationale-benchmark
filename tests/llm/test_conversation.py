@@ -16,6 +16,7 @@ from rationale_benchmark.llm.conversation import LLMConversation
 from rationale_benchmark.llm.exceptions import (
   ConversationArchivedError,
   RetryableProviderError,
+  TimeoutError,
   ValidationFailedError,
 )
 from rationale_benchmark.llm.provider_client import BaseProviderClient, ProviderResponse
@@ -146,6 +147,27 @@ def test_retryable_provider_error_retries():
   assert provider.calls == 2
 
 
+def test_timeout_error_retries_until_success():
+  config = build_config()
+  provider = ToggleProvider(
+    config,
+    responses=[
+      TimeoutError("Request timed out", timeout_seconds=30),
+      "{\"ok\": true}",
+    ],
+  )
+  conversation = LLMConversation(
+    config=config,
+    provider_client=provider,
+    sleep_fn=lambda _delay: None,
+  )
+
+  response = conversation.ask("hello")
+
+  assert response.parsed == {"ok": True}
+  assert provider.calls == 2
+
+
 def test_validator_failure_raises_after_retries():
   config = build_config(max_attempts=2)
   provider = ToggleProvider(
@@ -183,4 +205,3 @@ def test_streaming_provider_buffers_chunks():
   response = conversation.ask("compose")
   assert response.text == "Hello world"
   assert provider.calls == 1
-

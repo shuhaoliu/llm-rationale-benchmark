@@ -405,6 +405,7 @@ class BenchmarkRunner:
       prompt = build_prompt(prompt_context)
       question_errors: list[RunnerError] = []
       attempts: list[QuestionAttemptTrace] = []
+      attempts_before = conversation.provider_attempts
       try:
         canonical_response, response, query_time = await self._ask_question(
           conversation,
@@ -417,6 +418,10 @@ class BenchmarkRunner:
           section_index=section_index,
         )
       except ValidationFailedError as exc:
+        retry_count = self._retry_count_for_question(
+          conversation,
+          attempts_before,
+        )
         error = self._question_error(
           llm_id,
           questionnaire.id,
@@ -425,6 +430,7 @@ class BenchmarkRunner:
           question.id,
           "validation",
           str(exc),
+          retry_count=retry_count,
         )
         canonical_response = None
         question_errors.append(error)
@@ -443,6 +449,10 @@ class BenchmarkRunner:
         question_errors.append(error)
         section_errors.append(error)
       except LLMConnectorError as exc:
+        retry_count = self._retry_count_for_question(
+          conversation,
+          attempts_before,
+        )
         error = self._question_error(
           llm_id,
           questionnaire.id,
@@ -451,11 +461,16 @@ class BenchmarkRunner:
           question.id,
           "network",
           str(exc),
+          retry_count=retry_count,
         )
         canonical_response = None
         question_errors.append(error)
         section_errors.append(error)
       except Exception as exc:  # pragma: no cover - defensive
+        retry_count = self._retry_count_for_question(
+          conversation,
+          attempts_before,
+        )
         error = self._question_error(
           llm_id,
           questionnaire.id,
@@ -464,6 +479,7 @@ class BenchmarkRunner:
           question.id,
           "runtime",
           str(exc),
+          retry_count=retry_count,
         )
         canonical_response = None
         question_errors.append(error)
@@ -546,6 +562,8 @@ class BenchmarkRunner:
     question_id: str,
     stage: str,
     message: str,
+    *,
+    retry_count: int | None = None,
   ) -> RunnerError:
     return RunnerError(
       llm_id=llm_id,
@@ -555,6 +573,7 @@ class BenchmarkRunner:
       question_id=question_id,
       stage=stage,
       message=message,
+      retry_count=retry_count,
     )
 
   async def _ask_question(
@@ -611,6 +630,14 @@ class BenchmarkRunner:
     if canonical_response is None:
       canonical_response = self._canonicalize_response(question, response)
     return canonical_response, response, query_time
+
+  def _retry_count_for_question(
+    self,
+    conversation: LLMConversation,
+    attempts_before: int,
+  ) -> int:
+    attempts_used = conversation.provider_attempts - attempts_before
+    return max(0, attempts_used - 1)
 
   def _canonicalize_response(
     self,
