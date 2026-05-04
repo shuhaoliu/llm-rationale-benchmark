@@ -8,7 +8,7 @@ questionnaire:
     Answer each question as yourself by choosing either Plan A or Plan B.
     Follow the requested answer format and do not provide explanations.
   metadata:
-    default_population: 1
+    default_population: 50
     author: "Benchmark Curation Team"
     source: "config/questionnaires/Turing-Test-Materials.xlsx, RiskyChoiceFraming sheet"
     response_type: "Option"

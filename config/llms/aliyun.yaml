@@ -4,7 +4,7 @@
 defaults:
   timeout: 0
   max_retries: 3
-  temperature: 0
+  temperature: 0.8
   max_tokens: 1024
   response_format: text
 
