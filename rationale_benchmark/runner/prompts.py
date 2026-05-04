@@ -8,7 +8,11 @@ from rationale_benchmark.runner.types import PromptContext
 def build_prompt(context: PromptContext) -> str:
   """Render a prompt for a questionnaire question."""
 
-  return context.question.prompt
+  prompt_parts: list[str] = []
+  if context.section_instructions:
+    prompt_parts.append(context.section_instructions.strip())
+  prompt_parts.append(context.question.prompt.strip())
+  return "\n\n".join(prompt_parts)
 
 
 __all__ = ["build_prompt"]

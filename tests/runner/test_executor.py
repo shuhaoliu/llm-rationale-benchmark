@@ -531,6 +531,53 @@ def build_two_section_questionnaire() -> Questionnaire:
   )
 
 
+def build_multi_question_section_questionnaire() -> Questionnaire:
+  return Questionnaire(
+    id="multi-question-sections",
+    name="Multi Question Sections",
+    description=None,
+    version=1,
+    metadata={"default_population": 1},
+    default_population=1,
+    system_prompt="System prompt",
+    sections=[
+      Section(
+        name="First",
+        instructions="Use first section instructions.",
+        questions=[
+          Question(
+            id="first-1",
+            type=QuestionType.RATING_5,
+            prompt="First section question one.",
+            options=None,
+            scoring=ScoringRule(total=5, weights={"5": 5}),
+          ),
+          Question(
+            id="first-2",
+            type=QuestionType.RATING_5,
+            prompt="First section question two.",
+            options=None,
+            scoring=ScoringRule(total=5, weights={"4": 4}),
+          ),
+        ],
+      ),
+      Section(
+        name="Second",
+        instructions="Use second section instructions.",
+        questions=[
+          Question(
+            id="second-1",
+            type=QuestionType.RATING_5,
+            prompt="Second section question one.",
+            options=None,
+            scoring=ScoringRule(total=5, weights={"3": 3}),
+          )
+        ],
+      ),
+    ],
+  )
+
+
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
   return [
     json.loads(line)
@@ -731,12 +778,18 @@ def test_runner_rejects_multiple_questionnaires() -> None:
     )
 
 
-def test_sections_use_independent_contexts_and_questions_keep_history() -> None:
-  questionnaire = build_two_section_questionnaire()
+def test_sections_start_clean_and_later_questions_keep_section_history() -> None:
+  questionnaire = build_multi_question_section_questionnaire()
   factory = StubConversationFactory(
-    {"openai/gpt-4": [json.dumps({"answer": 5}), json.dumps({"answer": 4})]},
+    {
+      "openai/gpt-4": [
+        json.dumps({"answer": 5}),
+        json.dumps({"answer": 4}),
+        json.dumps({"answer": 3}),
+      ]
+    },
   )
-  runner = BenchmarkRunner(factory, max_concurrency=2)
+  runner = BenchmarkRunner(factory, max_concurrency=1)
 
   result = runner.run_sync(
     questionnaire=questionnaire,
@@ -745,13 +798,37 @@ def test_sections_use_independent_contexts_and_questions_keep_history() -> None:
 
   assert result.errors == []
   requests = factory.requests_by_llm_id["openai/gpt-4"]
-  assert len(requests) == 2
-  user_messages = [
-    [message["content"] for message in request if message["role"] == "user"]
+  assert len(requests) == 3
+
+  first_section_prompt_one = (
+    "Use first section instructions.\n\nFirst section question one."
+  )
+  first_section_prompt_two = (
+    "Use first section instructions.\n\nFirst section question two."
+  )
+  second_section_prompt_one = (
+    "Use second section instructions.\n\nSecond section question one."
+  )
+
+  request_signatures = [
+    [(message["role"], message["content"]) for message in request]
     for request in requests
   ]
-  assert ["First section question."] in user_messages
-  assert ["Second section question."] in user_messages
+
+  assert [
+    ("system", "System prompt"),
+    ("user", first_section_prompt_one),
+  ] in request_signatures
+  assert [
+    ("system", "System prompt"),
+    ("user", second_section_prompt_one),
+  ] in request_signatures
+  assert [
+    ("system", "System prompt"),
+    ("user", first_section_prompt_one),
+    ("assistant", json.dumps({"answer": 5})),
+    ("user", first_section_prompt_two),
+  ] in request_signatures
 
 
 def test_runner_records_configuration_errors() -> None:
