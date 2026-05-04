@@ -11,8 +11,9 @@ from rationale_benchmark.evaluator.basic import EvaluatorError, evaluate_basic
 FIXTURE_CONFIG_DIR = Path(__file__).parent / "fixtures" / "config"
 
 
-def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-  path.write_text(
+def write_runner_output(output_dir: Path, records: list[dict[str, Any]]) -> None:
+  output_dir.mkdir(parents=True, exist_ok=True)
+  (output_dir / "responses.jsonl").write_text(
     "\n".join(json.dumps(record) for record in records) + "\n",
     encoding="utf-8",
   )
@@ -43,18 +44,12 @@ def record(
           "questions": [
             {
               "id": "risk-rating",
-              "response": {
-                "raw": json.dumps({"answer": 5}),
-                "parsed": {"answer": 5},
-              },
+              "response": "5",
               "errors": [],
             },
             {
               "id": "risk-choice",
-              "response": {
-                "raw": json.dumps({"answer": "high"}),
-                "parsed": {"answer": "high"},
-              },
+              "response": "high",
               "errors": [],
             },
           ],
@@ -64,10 +59,7 @@ def record(
           "questions": [
             {
               "id": "trust-rating",
-              "response": {
-                "raw": json.dumps({"answer": 1}),
-                "parsed": {"answer": 1},
-              },
+              "response": "1",
               "errors": [],
             },
           ],
@@ -81,9 +73,9 @@ def record(
 def test_evaluate_basic_scores_groups_and_compares_human_baselines(
   tmp_path: Path,
 ) -> None:
-  output_path = tmp_path / "fixture-output.jsonl"
-  write_jsonl(
-    output_path,
+  output_dir = tmp_path / "fixture-output"
+  write_runner_output(
+    output_dir,
     [
       record(llm_id="openai/gpt-4", population_index=0),
       record(
@@ -95,15 +87,12 @@ def test_evaluate_basic_scores_groups_and_compares_human_baselines(
             "questions": [
               {
                 "id": "risk-rating",
-                "response": {"raw": json.dumps({"answer": 3}), "parsed": {"answer": 3}},
+                "response": "3",
                 "errors": [],
               },
               {
                 "id": "risk-choice",
-                "response": {
-                  "raw": json.dumps({"answer": "low"}),
-                  "parsed": {"answer": "low"},
-                },
+                "response": "low",
                 "errors": [],
               },
             ],
@@ -113,7 +102,7 @@ def test_evaluate_basic_scores_groups_and_compares_human_baselines(
             "questions": [
               {
                 "id": "trust-rating",
-                "response": {"raw": json.dumps({"answer": 3}), "parsed": {"answer": 3}},
+                "response": "3",
                 "errors": [],
               },
             ],
@@ -124,10 +113,10 @@ def test_evaluate_basic_scores_groups_and_compares_human_baselines(
     ],
   )
 
-  result = evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
   assert result.questionnaire_id == "evaluator-fixture"
-  assert result.output_dir == tmp_path / "fixture-output"
+  assert result.output_dir == output_dir
   assert result.model_section_means[("openai/gpt-4", "Risk")].mean == 5.5
   assert result.model_section_means[("openai/gpt-4", "Risk")].record_count == 2
   assert result.model_section_means[("anthropic/claude", "Risk")].mean == 8.0
@@ -140,9 +129,9 @@ def test_evaluate_basic_scores_groups_and_compares_human_baselines(
 def test_evaluate_basic_excludes_question_level_runner_errors(
   tmp_path: Path,
 ) -> None:
-  output_path = tmp_path / "with-errors.jsonl"
-  write_jsonl(
-    output_path,
+  output_dir = tmp_path / "with-errors"
+  write_runner_output(
+    output_dir,
     [
       record(
         sections=[
@@ -156,10 +145,7 @@ def test_evaluate_basic_excludes_question_level_runner_errors(
               },
               {
                 "id": "risk-choice",
-                "response": {
-                  "raw": json.dumps({"answer": "high"}),
-                  "parsed": {"answer": "high"},
-                },
+                "response": "high",
                 "errors": [],
               },
             ],
@@ -169,15 +155,15 @@ def test_evaluate_basic_excludes_question_level_runner_errors(
     ],
   )
 
-  result = evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
   assert result.model_section_means[("openai/gpt-4", "Risk")].mean == 3.0
 
 
 def test_evaluate_basic_accepts_choice_option_labels(tmp_path: Path) -> None:
-  output_path = tmp_path / "plan-labels.jsonl"
-  write_jsonl(
-    output_path,
+  output_dir = tmp_path / "plan-labels"
+  write_runner_output(
+    output_dir,
     [
       record(
         questionnaire_name="plan-choice-fixture",
@@ -187,7 +173,7 @@ def test_evaluate_basic_accepts_choice_option_labels(tmp_path: Path) -> None:
             "questions": [
               {
                 "id": "plan-choice",
-                "response": {"raw": "I choose Plan B.", "parsed": "I choose Plan B."},
+                "response": "I choose Plan B.",
                 "errors": [],
               }
             ],
@@ -197,28 +183,28 @@ def test_evaluate_basic_accepts_choice_option_labels(tmp_path: Path) -> None:
     ],
   )
 
-  result = evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
   assert result.model_section_means[("openai/gpt-4", "Plans")].mean == 1.0
 
 
 def test_evaluate_basic_writes_non_empty_pdf_charts(tmp_path: Path) -> None:
-  output_path = tmp_path / "chart-output.jsonl"
-  write_jsonl(output_path, [record()])
+  output_dir = tmp_path / "chart-output"
+  write_runner_output(output_dir, [record()])
 
-  result = evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
-  assert result.section_scores_pdf == tmp_path / "chart-output" / "section-scores.pdf"
-  assert result.section_delta_pdf == tmp_path / "chart-output" / "section-delta.pdf"
+  assert result.section_scores_pdf == output_dir / "section-scores.pdf"
+  assert result.section_delta_pdf == output_dir / "section-delta.pdf"
   assert result.section_scores_pdf.stat().st_size > 100
   assert result.section_delta_pdf.stat().st_size > 100
 
 
 def test_evaluate_basic_adds_score_ticks_and_bar_values(tmp_path: Path) -> None:
-  output_path = tmp_path / "value-labels.jsonl"
-  write_jsonl(output_path, [record()])
+  output_dir = tmp_path / "value-labels"
+  write_runner_output(output_dir, [record()])
 
-  result = evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
   score_pdf = result.section_scores_pdf.read_bytes()
   delta_pdf = result.section_delta_pdf.read_bytes()
 
@@ -234,9 +220,9 @@ def test_evaluate_basic_preserves_long_section_labels_in_charts(
   tmp_path: Path,
 ) -> None:
   section_name = "Group size sensitivity for human lives-P-6000life"
-  output_path = tmp_path / "long-labels.jsonl"
-  write_jsonl(
-    output_path,
+  output_dir = tmp_path / "long-labels"
+  write_runner_output(
+    output_dir,
     [
       record(
         questionnaire_name="long-section-fixture",
@@ -246,7 +232,7 @@ def test_evaluate_basic_preserves_long_section_labels_in_charts(
             "questions": [
               {
                 "id": "long-choice",
-                "response": {"raw": "Plan B", "parsed": "Plan B"},
+                "response": "Plan B",
                 "errors": [],
               }
             ],
@@ -256,16 +242,16 @@ def test_evaluate_basic_preserves_long_section_labels_in_charts(
     ],
   )
 
-  result = evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
   assert section_name.encode("latin-1") in result.section_scores_pdf.read_bytes()
   assert section_name.encode("latin-1") in result.section_delta_pdf.read_bytes()
 
 
 def test_evaluate_basic_fails_on_mixed_questionnaires(tmp_path: Path) -> None:
-  output_path = tmp_path / "mixed.jsonl"
-  write_jsonl(
-    output_path,
+  output_dir = tmp_path / "mixed"
+  write_runner_output(
+    output_dir,
     [
       record(questionnaire_name="evaluator-fixture"),
       record(questionnaire_name="other-fixture"),
@@ -273,21 +259,24 @@ def test_evaluate_basic_fails_on_mixed_questionnaires(tmp_path: Path) -> None:
   )
 
   with pytest.raises(EvaluatorError, match="multiple questionnaires"):
-    evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+    evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
 
 def test_evaluate_basic_fails_on_unknown_section(tmp_path: Path) -> None:
-  output_path = tmp_path / "unknown-section.jsonl"
-  write_jsonl(output_path, [record(sections=[{"id": "Unknown", "questions": []}])])
+  output_dir = tmp_path / "unknown-section"
+  write_runner_output(
+    output_dir,
+    [record(sections=[{"id": "Unknown", "questions": []}])],
+  )
 
   with pytest.raises(EvaluatorError, match="Unknown section"):
-    evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+    evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
 
 
 def test_evaluate_basic_fails_on_unknown_question(tmp_path: Path) -> None:
-  output_path = tmp_path / "unknown-question.jsonl"
-  write_jsonl(
-    output_path,
+  output_dir = tmp_path / "unknown-question"
+  write_runner_output(
+    output_dir,
     [
       record(
         sections=[
@@ -296,7 +285,7 @@ def test_evaluate_basic_fails_on_unknown_question(tmp_path: Path) -> None:
             "questions": [
               {
                 "id": "missing",
-                "response": {"raw": json.dumps({"answer": 5}), "parsed": {"answer": 5}},
+                "response": "5",
                 "errors": [],
               }
             ],
@@ -307,4 +296,4 @@ def test_evaluate_basic_fails_on_unknown_question(tmp_path: Path) -> None:
   )
 
   with pytest.raises(EvaluatorError, match="Unknown question"):
-    evaluate_basic(output_path, config_dir=FIXTURE_CONFIG_DIR)
+    evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)

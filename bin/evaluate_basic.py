@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the basic evaluator over one runner JSONL output."""
+"""Run the basic evaluator over one runner output directory."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from rationale_benchmark.evaluator import EvaluatorError, evaluate_basic
 
 
 def main() -> int:
-  """Evaluate one runner output file and report chart paths."""
+  """Evaluate one runner output directory and report chart paths."""
   parser = argparse.ArgumentParser(
-    description="Evaluate one raw runner JSONL output file.",
+    description="Evaluate one runner output directory.",
   )
-  parser.add_argument("runner_output", help="JSONL output emitted by the runner")
+  parser.add_argument("runner_output", help="Directory emitted by the runner")
   args = parser.parse_args()
 
   try:

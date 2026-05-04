@@ -25,7 +25,7 @@ and logging policies.
 5. Instantiate one runner execution per questionnaire with validated inputs,
    concurrency parameters, and output settings.
 6. Execute each questionnaire against the selected models.
-7. Persist raw JSONL response records and render a human-readable summary.
+7. Persist split JSONL output files and render a human-readable summary.
 8. Exit with `0` on success, non-zero for validation or runtime failures.
 
 ### Options
@@ -37,8 +37,10 @@ and logging policies.
   listed models present in the chosen LLM config.
 - `--config-dir <path>`: Override base directory holding `llms/` and
   `questionnaires/` subdirectories (defaults to `./config`).
-- `--output <path>`: Write JSONL response records to a specific file; omit to
-  print to stdout.
+- `--output <name-or-path>`: Optional output directory override. When omitted,
+  the CLI creates `results/<questionnaire-id>-<llm-config>-<timestamp>/`.
+  When supplied, the value is used as the output directory path for the runner
+  output files.
 - `--list-questionnaires`: List discovered questionnaire IDs and exit.
 - `--list-llm-configs`: List available LLM configuration stems and exit.
 - `--verbose`: Elevate logging to verbose/DEBUG mode.
@@ -100,7 +102,9 @@ and display a concise error along with the usage text.
     `--total-population` or `metadata.default_population`.
   - Provider-call concurrency limit from `--max-concurrency`, defaulting to
     `5`.
-  - Output descriptors (target path, stdout flag).
+  - Output directory descriptor. By default this is
+    `results/<questionnaire-id>-<llm-config>-<timestamp>/`; `--output`
+    overrides the directory path.
 - The runner may query different LLMs, population members, and sections in
   parallel. The theoretical maximum parallelism for one runner execution is
   `#SpecifiedLLMs * #Population * #Sections`; `--max-concurrency` caps the real
@@ -111,16 +115,22 @@ and display a concise error along with the usage text.
   exit with status `130`.
 
 ## Output Specification
-- Output records use the raw JSONL contract defined in
+- Output files use the split JSONL contract defined in
   `docs/03-runner/design.md`.
-- Default behavior writes JSONL records to stdout; when `--output` is supplied,
-  write to the provided path and emit a confirmation message to stderr
-  summarizing location and key metrics (e.g., questionnaire ID, model count,
-  population size, records written).
+- Default behavior creates a new output directory under `results/` named
+  `<questionnaire-id>-<llm-config>-<timestamp>/`. The directory contains
+  `responses.jsonl` for canonical answers and `metadata.jsonl` for raw provider
+  attempts and diagnostics.
+- `--output` no longer accepts a JSONL file name. It is optional and, when
+  supplied, overrides the output directory path. The runner still writes
+  `responses.jsonl` and `metadata.jsonl` inside that directory.
+- After execution, emit a confirmation message to stderr summarizing the output
+  directory and key metrics (e.g., questionnaire ID, model count, population
+  size, records written).
 - CLI summary prints a concise run summary showing records written and any
   runner warnings or errors (e.g., retries, validation failures).
 - Respect project logging policy: structured JSON logs at INFO level; human
-  summaries restricted to stdout/stderr separation for shell scripting.
+  summaries and output-location confirmations go to stderr for shell scripting.
 
 ## Error Handling
 - Input validation errors (unknown questionnaire, malformed option, missing
@@ -158,13 +168,15 @@ and display a concise error along with the usage text.
   - Configuration resolution errors (missing files, unresolved environment
     variables).
 - Integration tests (with fixtures and mock providers) verify full execution
-  path, JSONL output schema, and exit codes for mixed-success scenarios.
+  path, output directory naming, split JSONL output schema, and exit codes for
+  mixed-success scenarios.
 - Tests run via `uv run pytest`, organized under `tests/cli/`.
 
 ## Extensibility Guidelines
 - Additional commands or subcommands must preserve compatibility with existing
   flags. Prefer additive flags over breaking changes.
-- When introducing new outputs (e.g., CSV), gate behind explicit options to
-  avoid altering the default JSONL payload.
+- When introducing new outputs (e.g., CSV), gate behind explicit options and
+  write them inside the runner output directory unless a future design says
+  otherwise.
 - Keep CLI logic thin; push new business rules into configuration loaders,
   questionnaire validators, or runner components to maintain modularity.

@@ -1,9 +1,9 @@
-"""Shared data structures for the raw-response runner."""
+"""Shared data structures for the questionnaire runner."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +70,7 @@ class RunnerExecutionPlan:
   questionnaire_path: Path | None
   llm_id: str
   population_index: int
-  output_path: Path | None
+  output_dir: Path | None
 
 
 @dataclass
@@ -79,14 +79,38 @@ class QuestionRunTrace:
 
   section_id: str
   question_id: str
-  response: LLMResponse | None
-  attempts: int
+  canonical_response: str | None
+  attempts: list[QuestionAttemptTrace]
   errors: list[RunnerError] = field(default_factory=list)
 
 
 @dataclass
-class RawResponseRecord:
-  """Raw output record for one questionnaire administration."""
+class QuestionAttemptTrace:
+  """Raw provider attempt and validation result for one question."""
+
+  attempt: int
+  raw_response: LLMResponse | None
+  canonical_response: str | None
+  validation_error: str | None
+  provider_metadata: dict[str, Any] = field(default_factory=dict)
+
+  def to_json_dict(self) -> dict[str, Any]:
+    """Return a JSON-serialisable mapping."""
+
+    return {
+      "attempt": self.attempt,
+      "raw_response": (
+        self.raw_response.text if self.raw_response is not None else None
+      ),
+      "canonical_response": self.canonical_response,
+      "validation_error": self.validation_error,
+      "provider_metadata": dict(self.provider_metadata),
+    }
+
+
+@dataclass
+class ResponseRecord:
+  """Canonical response record for one questionnaire administration."""
 
   questionnaire_name: str
   questionnaire_path: Path | None
@@ -113,25 +137,66 @@ class RawResponseRecord:
 
 
 @dataclass
+class MetadataRecord:
+  """Provider metadata record aligned with a response record."""
+
+  questionnaire_name: str
+  questionnaire_path: Path | None
+  llm_id: str
+  population_index: int
+  query_time: datetime
+  metadata: dict[str, Any]
+  errors: list[RunnerError] = field(default_factory=list)
+
+  def to_json_dict(self) -> dict[str, Any]:
+    """Return the JSONL payload for this record."""
+
+    return {
+      "questionnaire": {
+        "name": self.questionnaire_name,
+        "path": str(self.questionnaire_path) if self.questionnaire_path else None,
+      },
+      "llm_id": self.llm_id,
+      "population_index": self.population_index,
+      "query_time": self.query_time.isoformat(),
+      "metadata": self.metadata,
+      "errors": [error.to_json_dict() for error in self.errors],
+    }
+
+
+@dataclass
+class OutputRecordPair:
+  """Line-aligned response and metadata records."""
+
+  response_record: ResponseRecord
+  metadata_record: MetadataRecord
+
+
+@dataclass
 class RawRunResult:
   """Result returned by a runner execution."""
 
-  records: list[RawResponseRecord]
+  records: list[ResponseRecord]
+  metadata_records: list[MetadataRecord] = field(default_factory=list)
+  output_dir: Path | None = None
   errors: list[RunnerError] = field(default_factory=list)
 
 
 def now_utc() -> datetime:
   """Return the current UTC timestamp."""
 
-  return datetime.now(UTC)
+  return datetime.now(timezone.utc)
 
 
 __all__ = [
+  "MetadataRecord",
+  "OutputRecordPair",
   "PromptContext",
   "QuestionAnswer",
+  "QuestionAttemptTrace",
   "QuestionRunTrace",
-  "RawResponseRecord",
   "RawRunResult",
+  "ResponseRecord",
   "RunnerError",
   "RunnerExecutionPlan",
   "now_utc",

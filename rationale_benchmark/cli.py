@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from collections.abc import Iterable, Mapping
@@ -28,8 +27,8 @@ from rationale_benchmark.questionnaire import (
 from rationale_benchmark.runner import (
   BenchmarkRunner,
   QueryProgressDisplay,
-  RawResponseRecord,
   RawRunResult,
+  ResponseRecord,
   RunnerConfigError,
 )
 from rationale_benchmark.runner.progress_display import QueryProgressDisplayProtocol
@@ -213,23 +212,17 @@ def write_output(
   *,
   output_path: str | None,
 ) -> None:
-  """Write raw JSONL output to stdout or report the runner-written file."""
-  payload = "\n".join(
-    json.dumps(record.to_json_dict(), ensure_ascii=False)
-    for record in result.records
-  )
-  if output_path:
-    destination = Path(output_path)
+  """Report where the runner wrote split JSONL output."""
+  if result.output_dir is not None:
     click.echo(
       (
-        f"Raw responses written to {destination} "
+        f"Responses written to {result.output_dir / 'responses.jsonl'} "
+        f"and metadata to {result.output_dir / 'metadata.jsonl'} "
         f"(records={len(result.records)})"
       ),
       err=True,
     )
     return
-  if payload:
-    click.echo(payload)
 
 
 def execute_benchmark(
@@ -241,6 +234,7 @@ def execute_benchmark(
   total_population: int | None = None,
   questionnaire_paths: Mapping[str, Path] | None = None,
   output_path: str | None = None,
+  llm_profile: str,
   progress_display: QueryProgressDisplayProtocol | None = None,
 ) -> RawRunResult:
   """Run the benchmark runner synchronously."""
@@ -251,11 +245,15 @@ def execute_benchmark(
     progress_display=progress_display,
   )
   destination = Path(output_path) if output_path else None
-  if destination is not None:
-    destination.write_text("", encoding="utf-8")
-  records: list[RawResponseRecord] = []
+  records: list[ResponseRecord] = []
+  metadata_records = []
   errors = []
+  output_dir = None
   for questionnaire in questionnaires:
+    questionnaire_destination = destination
+    if destination is not None and len(questionnaires) > 1:
+      timestamped_name = f"{questionnaire.id}-{len(records)}"
+      questionnaire_destination = destination / timestamped_name
     result = runner.run_sync(
       questionnaire=questionnaire,
       llm_ids=models,
@@ -265,12 +263,17 @@ def execute_benchmark(
         if questionnaire_paths is not None
         else None
       ),
-      output_path=destination,
+      output_path=questionnaire_destination,
+      llm_profile=llm_profile,
     )
     records.extend(result.records)
+    metadata_records.extend(result.metadata_records)
     errors.extend(result.errors)
+    output_dir = result.output_dir
   return RawRunResult(
     records=records,
+    metadata_records=metadata_records,
+    output_dir=output_dir,
     errors=errors,
   )
 
@@ -297,7 +300,7 @@ def execute_benchmark(
 @click.option(
   "--output",
   type=click.Path(),
-  help="Optional path for JSONL responses (defaults to stdout).",
+  help="Optional directory for responses.jsonl and metadata.jsonl.",
 )
 @click.option(
   "--list-questionnaires",
@@ -448,6 +451,7 @@ def main(
         for selected, loaded in zip(selected_questionnaires, questionnaire_objects)
       },
       output_path=output,
+      llm_profile=llm_config,
       progress_display=progress_display,
     )
   except RunnerConfigError as exc:

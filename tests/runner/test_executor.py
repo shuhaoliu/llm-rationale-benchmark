@@ -27,6 +27,14 @@ from rationale_benchmark.runner.executor import BenchmarkRunner, RunnerConfigErr
 from rationale_benchmark.runner.progress_display import QueryProgressSnapshot
 
 
+@pytest.fixture(autouse=True)
+def isolate_default_results_dir(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.chdir(tmp_path)
+
+
 class RecordingProvider(BaseProviderClient):
   """Provider returning configured responses and recording request messages."""
 
@@ -401,9 +409,9 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
   ]
 
 
-def test_runner_writes_raw_jsonl_records(tmp_path: Path) -> None:
+def test_runner_writes_split_jsonl_records(tmp_path: Path) -> None:
   questionnaire = build_questionnaire()
-  output_path = tmp_path / "responses.jsonl"
+  output_dir = tmp_path / "run-output"
   factory = StubConversationFactory(
     {
       "openai/gpt-4": [
@@ -417,27 +425,100 @@ def test_runner_writes_raw_jsonl_records(tmp_path: Path) -> None:
   result = runner.run_sync(
     questionnaire=questionnaire,
     llm_ids=["openai/gpt-4"],
-    output_path=output_path,
+    output_path=output_dir,
   )
 
   assert result.errors == []
   assert len(result.records) == 1
-  records = read_jsonl(output_path)
+  records = read_jsonl(output_dir / "responses.jsonl")
+  metadata_records = read_jsonl(output_dir / "metadata.jsonl")
   assert len(records) == 1
+  assert len(metadata_records) == 1
   record = records[0]
+  metadata_record = metadata_records[0]
   assert record["questionnaire"]["name"] == "test-questionnaire"
+  assert metadata_record["questionnaire"] == record["questionnaire"]
   assert record["llm_id"] == "openai/gpt-4"
+  assert metadata_record["llm_id"] == record["llm_id"]
   assert record["population_index"] == 0
+  assert metadata_record["population_index"] == record["population_index"]
   assert record["query_time"]
+  assert metadata_record["query_time"] == record["query_time"]
   assert "summary" not in record
   assert "score" not in json.dumps(record)
   assert record["response"]["sections"][0]["id"] == "General"
   questions = record["response"]["sections"][0]["questions"]
   assert [question["id"] for question in questions] == ["rating-1", "choice-1"]
-  assert questions[0]["response"]["raw"] == json.dumps(
+  assert questions[0]["response"] == "5"
+  assert questions[1]["response"] == "a"
+  attempts = metadata_record["metadata"]["sections"][0]["questions"][0][
+    "attempts"
+  ]
+  assert attempts[0]["raw_response"] == json.dumps(
     {"answer": 5, "reasoning": "Helpful."}
   )
-  assert questions[0]["response"]["parsed"]["answer"] == 5
+  assert attempts[0]["canonical_response"] == "5"
+  assert attempts[0]["provider_metadata"]["request_index"] == 1
+
+
+def test_runner_default_output_dir_includes_llm_profile() -> None:
+  questionnaire = build_questionnaire()
+  factory = StubConversationFactory(
+    {
+      "openai/gpt-4": [
+        json.dumps({"answer": 5}),
+        json.dumps({"answer": "a"}),
+      ]
+    },
+  )
+  runner = BenchmarkRunner(factory, max_concurrency=1)
+
+  result = runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    llm_profile="default-llms",
+  )
+
+  assert result.output_dir is not None
+  assert result.output_dir.parent == Path("results")
+  assert result.output_dir.name.startswith("test-questionnaire-default-llms-")
+  assert (result.output_dir / "responses.jsonl").is_file()
+  assert (result.output_dir / "metadata.jsonl").is_file()
+
+
+def test_runner_retries_when_canonicalization_fails(tmp_path: Path) -> None:
+  questionnaire = build_questionnaire()
+  output_dir = tmp_path / "retry-output"
+  factory = StubConversationFactory(
+    {
+      "openai/gpt-4": [
+        json.dumps({"answer": 5}),
+        json.dumps({"answer": "definitely not an option"}),
+        json.dumps({"answer": "Option A"}),
+      ]
+    },
+  )
+  runner = BenchmarkRunner(factory, max_concurrency=1)
+
+  result = runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    output_path=output_dir,
+  )
+
+  assert result.errors == []
+  record = read_jsonl(output_dir / "responses.jsonl")[0]
+  metadata_record = read_jsonl(output_dir / "metadata.jsonl")[0]
+  questions = record["response"]["sections"][0]["questions"]
+  assert questions[1]["response"] == "a"
+  choice_attempts = metadata_record["metadata"]["sections"][0]["questions"][1][
+    "attempts"
+  ]
+  assert [attempt["canonical_response"] for attempt in choice_attempts] == [
+    None,
+    "a",
+  ]
+  assert "not allowed" in choice_attempts[0]["validation_error"]
 
 
 def test_runner_creates_records_for_each_llm_and_population() -> None:

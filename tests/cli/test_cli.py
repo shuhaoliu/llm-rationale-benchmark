@@ -54,7 +54,7 @@ def _jsonl_records(text: str) -> list[dict[str, object]]:
     if not line.strip().startswith("{"):
       continue
     payload = json.loads(line)
-    if "llm_id" in payload and "response" in payload:
+    if "llm_id" in payload and ("response" in payload or "metadata" in payload):
       records.append(payload)
   return records
 
@@ -127,7 +127,7 @@ def test_list_questionnaires_outputs_available_names(
   assert "sample" in result.output
 
 
-def test_run_benchmark_emits_jsonl_and_summary(
+def test_run_benchmark_writes_default_split_outputs_and_summary(
   tmp_path: Path,
   runner: CliRunner,
   monkeypatch: pytest.MonkeyPatch,
@@ -135,6 +135,7 @@ def test_run_benchmark_emits_jsonl_and_summary(
   _write_questionnaire(tmp_path, "sample")
   _write_llm_config(tmp_path)
   monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
+  monkeypatch.chdir(tmp_path)
   result = runner.invoke(
     main,
     [
@@ -147,12 +148,21 @@ def test_run_benchmark_emits_jsonl_and_summary(
     ],
   )
   assert result.exit_code == 0
-  records = _jsonl_records(result.output)
+  run_dirs = list((tmp_path / "results").glob("sample-default-llms-*"))
+  assert len(run_dirs) == 1
+  records = _jsonl_records(
+    (run_dirs[0] / "responses.jsonl").read_text(encoding="utf-8")
+  )
+  metadata_records = _jsonl_records(
+    (run_dirs[0] / "metadata.jsonl").read_text(encoding="utf-8")
+  )
   assert len(records) == 3
+  assert len(metadata_records) == 3
   assert {record["population_index"] for record in records} == {0, 1, 2}
   assert all(record["questionnaire"]["name"] == "sample" for record in records)
   assert all(record["llm_id"] == "openai/stub-model" for record in records)
   assert records[0]["response"]["sections"][0]["questions"][0]["id"] == "q1"
+  assert records[0]["response"]["sections"][0]["questions"][0]["response"] == "3"
   assert "Run Summary" in result.output
 
 
@@ -163,6 +173,7 @@ def test_total_population_option_overrides_questionnaire_default(
 ) -> None:
   _write_questionnaire(tmp_path, "sample")
   _write_llm_config(tmp_path)
+  output_dir = tmp_path / "run-output"
   monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
   result = runner.invoke(
     main,
@@ -175,10 +186,14 @@ def test_total_population_option_overrides_questionnaire_default(
       "2",
       "--max-concurrency",
       "1",
+      "--output",
+      str(output_dir),
     ],
   )
   assert result.exit_code == 0
-  records = _jsonl_records(result.output)
+  records = _jsonl_records(
+    (output_dir / "responses.jsonl").read_text(encoding="utf-8")
+  )
   assert len(records) == 2
   assert {record["population_index"] for record in records} == {0, 1}
 
@@ -190,7 +205,7 @@ def test_output_option_writes_jsonl_file(
 ) -> None:
   _write_questionnaire(tmp_path, "sample")
   _write_llm_config(tmp_path)
-  output_path = tmp_path / "responses.jsonl"
+  output_dir = tmp_path / "run-output"
   monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
   result = runner.invoke(
     main,
@@ -202,13 +217,19 @@ def test_output_option_writes_jsonl_file(
       "--total-population",
       "1",
       "--output",
-      str(output_path),
+      str(output_dir),
     ],
   )
   assert result.exit_code == 0
   assert _jsonl_records(result.output) == []
-  records = _jsonl_records(output_path.read_text(encoding="utf-8"))
+  records = _jsonl_records(
+    (output_dir / "responses.jsonl").read_text(encoding="utf-8")
+  )
+  metadata_records = _jsonl_records(
+    (output_dir / "metadata.jsonl").read_text(encoding="utf-8")
+  )
   assert len(records) == 1
+  assert len(metadata_records) == 1
   assert records[0]["questionnaire"]["name"] == "sample"
 
 
@@ -236,6 +257,7 @@ def test_explicit_llm_config_does_not_merge_default_models(
     encoding="utf-8",
   )
   monkeypatch.setattr("rationale_benchmark.cli.ProviderRegistry", DummyRegistry)
+  output_dir = tmp_path / "aliyun-output"
 
   result = runner.invoke(
     main,
@@ -248,11 +270,15 @@ def test_explicit_llm_config_does_not_merge_default_models(
       "aliyun",
       "--total-population",
       "1",
+      "--output",
+      str(output_dir),
     ],
   )
 
   assert result.exit_code == 0
-  records = _jsonl_records(result.output)
+  records = _jsonl_records(
+    (output_dir / "responses.jsonl").read_text(encoding="utf-8")
+  )
   assert [record["llm_id"] for record in records] == [
     "aliyun_openai_compatible/qwen-test"
   ]

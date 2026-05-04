@@ -1,4 +1,4 @@
-"""Basic evaluator for raw runner JSONL output."""
+"""Basic evaluator for runner output directories."""
 
 from __future__ import annotations
 
@@ -80,10 +80,10 @@ def evaluate_basic(
   *,
   config_dir: Path | str = DEFAULT_CONFIG_DIR,
 ) -> EvaluationResult:
-  """Evaluate one runner JSONL file and write PDF section charts.
+  """Evaluate one runner output directory and write PDF section charts.
 
   Args:
-    runner_output: JSONL file emitted by the benchmark runner.
+    runner_output: Directory emitted by the benchmark runner.
     config_dir: Project configuration directory containing ``questionnaires/``.
 
   Returns:
@@ -93,8 +93,9 @@ def evaluate_basic(
     EvaluatorError: If input cannot be read, scored, or charted.
   """
 
-  output_path = Path(runner_output)
-  records = _load_jsonl(output_path)
+  output_dir = Path(runner_output)
+  response_path = _resolve_response_path(output_dir)
+  records = _load_jsonl(response_path)
   questionnaire_name = _single_questionnaire_name(records)
   questionnaire = _load_questionnaire(questionnaire_name, Path(config_dir))
   section_scores = _score_records(records, questionnaire)
@@ -107,8 +108,6 @@ def evaluate_basic(
     questionnaire,
   )
 
-  output_dir = output_path.parent / output_path.stem
-  output_dir.mkdir(parents=True, exist_ok=True)
   section_scores_pdf = output_dir / "section-scores.pdf"
   section_delta_pdf = output_dir / "section-delta.pdf"
   _write_section_scores_chart(
@@ -131,15 +130,21 @@ def evaluate_basic(
   )
 
 
+def _resolve_response_path(output_dir: Path) -> Path:
+  if not output_dir.is_dir():
+    raise EvaluatorError(f"Runner output directory '{output_dir}' cannot be read")
+  return output_dir / "responses.jsonl"
+
+
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
   if not path.is_file():
-    raise EvaluatorError(f"Runner output file '{path}' cannot be read")
+    raise EvaluatorError(f"Runner responses file '{path}' cannot be read")
   try:
     lines = path.read_text(encoding="utf-8").splitlines()
   except OSError as exc:
-    raise EvaluatorError(f"Runner output file '{path}' cannot be read") from exc
+    raise EvaluatorError(f"Runner responses file '{path}' cannot be read") from exc
   if not any(line.strip() for line in lines):
-    raise EvaluatorError(f"Runner output file '{path}' is empty")
+    raise EvaluatorError(f"Runner responses file '{path}' is empty")
 
   records: list[dict[str, Any]] = []
   for line_number, line in enumerate(lines, start=1):
@@ -153,7 +158,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
       raise EvaluatorError(f"Malformed JSONL line {line_number}: expected object")
     records.append(value)
   if not records:
-    raise EvaluatorError(f"Runner output file '{path}' is empty")
+    raise EvaluatorError(f"Runner responses file '{path}' is empty")
   return records
 
 
@@ -263,12 +268,19 @@ def _score_question_payload(
     return None
 
   response = question_payload.get("response")
-  if not isinstance(response, dict):
+  if isinstance(response, dict):
+    answer = _extract_answer(response)
+  elif isinstance(response, str):
+    answer = response
+  else:
     raise EvaluatorError(
       f"Record {record_index} question '{question_id}' has no scorable response"
     )
   question = question_map[question_id]
-  answer = _extract_answer(response)
+  if question.type is not QuestionType.CHOICE and isinstance(answer, str):
+    stripped = answer.strip()
+    if stripped.isdigit():
+      answer = int(stripped)
   try:
     answer = _canonicalize_choice_answer(question, answer)
     token = validate_answer(question, answer)
@@ -431,9 +443,7 @@ def _write_section_scores_chart(
   series["Human average"] = human_values
   for model in models:
     series[model] = [
-      means.get((model, section_name)).mean
-      if (model, section_name) in means
-      else None
+      means[(model, section_name)].mean if (model, section_name) in means else None
       for section_name in sections
     ]
   _write_bar_chart_pdf(
@@ -458,7 +468,7 @@ def _write_section_delta_chart(
   models = sorted({comparison.llm_id for comparison in comparisons.values()})
   series = {
     model: [
-      comparisons.get((model, section_name)).delta
+      comparisons[(model, section_name)].delta
       if (model, section_name) in comparisons
       else None
       for section_name in sections
