@@ -1,0 +1,25 @@
+questionnaire:
+  id: "long-section-fixture"
+  name: "Long Section Fixture"
+  description: "Fixture for chart label readability."
+  version: 1
+  system_prompt: "Answer directly."
+  metadata:
+    default_population: 1
+  sections:
+    - name: "Group size sensitivity for human lives-P-6000life"
+      human:
+        average: 0.4
+        population: 10
+      questions:
+        - id: "long-choice"
+          type: "choice"
+          prompt: "Choose a plan."
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1

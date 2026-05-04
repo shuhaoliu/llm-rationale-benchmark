@@ -1,0 +1,42 @@
+questionnaire:
+  id: "evaluator-fixture"
+  name: "Evaluator Fixture"
+  description: "Small questionnaire for evaluator tests."
+  version: 1
+  system_prompt: "Answer directly."
+  metadata:
+    default_population: 1
+  sections:
+    - name: "Risk"
+      human:
+        average: 4.0
+        population: 10
+      questions:
+        - id: "risk-rating"
+          type: "rating-5"
+          prompt: "Rate the risk."
+          scoring:
+            total: 5
+            weights: [1, 2, 3, 4, 5]
+        - id: "risk-choice"
+          type: "choice"
+          prompt: "Choose a risk option."
+          options:
+            low: "Low"
+            high: "High"
+          scoring:
+            total: 3
+            weights:
+              low: 0
+              high: 3
+    - name: "Trust"
+      human:
+        average: 2.0
+        population: 8
+      questions:
+        - id: "trust-rating"
+          type: "rating-5"
+          prompt: "Rate trust."
+          scoring:
+            total: 5
+            weights: [1, 2, 3, 4, 5]

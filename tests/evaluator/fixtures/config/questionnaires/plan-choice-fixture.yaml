@@ -1,0 +1,25 @@
+questionnaire:
+  id: "plan-choice-fixture"
+  name: "Plan Choice Fixture"
+  description: "Fixture for human-readable choice labels."
+  version: 1
+  system_prompt: "Answer directly."
+  metadata:
+    default_population: 1
+  sections:
+    - name: "Plans"
+      human:
+        average: 0.5
+        population: 10
+      questions:
+        - id: "plan-choice"
+          type: "choice"
+          prompt: "Choose a plan."
+          options:
+            A: "Plan A"
+            B: "Plan B"
+          scoring:
+            total: 1
+            weights:
+              A: 0
+              B: 1
