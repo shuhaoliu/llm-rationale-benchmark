@@ -68,11 +68,26 @@ Optional fields:
 
 OpenAI-compatible providers (anything that speaks the OpenAI REST shape but is not the first-party OpenAI service) must use the key pattern `{provider}_openai_compatible`. The suffix ensures the loader routes requests through the OpenAI-compatible client while still allowing multiple providers (e.g., `openrouter_openai_compatible`, `azure_openai_compatible`) to coexist.
 
+Aliyun is the exception: provider keys ending with `aliyun` (including the
+plain `aliyun` key) are also routed through the OpenAI-compatible client. This
+keeps Aliyun separate in configuration while reusing the same Chat Completions
+transport.
+
+For Aliyun providers, model names may optionally include a trailing integer in
+parentheses to control deep-thinking parameters:
+- `qwen3.6-plus` leaves `enable_thinking` and `thinking_budget` unset.
+- `qwen3.6-plus (0)` sets `enable_thinking: false`.
+- `qwen3.6-plus (10)` sets `enable_thinking: true` and
+  `thinking_budget: 10`.
+- `qwen3.6-plus (-1)` sets `enable_thinking: true` without a
+  `thinking_budget`.
+
 ### Supported Provider Keys
 | Provider key      | Description                                                |
 |-------------------|------------------------------------------------------------|
 | `openai`          | Official OpenAI endpoint (`https://api.openai.com/v1`).    |
 | `{provider}_openai_compatible` | OpenAI-compatible APIs that reuse the OpenAI client (e.g., `openrouter_openai_compatible`, `azure_openai_compatible`). |
+| `aliyun` or `{provider}_aliyun` | Aliyun OpenAI-compatible APIs with optional thinking suffix parsing in model names. |
 | `anthropic`       | Claude family models via `https://api.anthropic.com`.      |
 | `gemini`          | Google Gemini models; requires `endpoint` and `api_key`.   |
 

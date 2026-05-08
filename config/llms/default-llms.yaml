@@ -15,7 +15,7 @@ providers:
       - "gpt-4"
       - "gpt-3.5-turbo"
 
-  dashscope_openai_compatible:
+  aliyun:
     api_key: "${DASHSCOPE_API_KEY}"
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     models:

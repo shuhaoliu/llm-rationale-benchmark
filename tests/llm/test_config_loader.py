@@ -160,6 +160,146 @@ def test_suffix_openai_compatible_provider(tmp_path):
   assert config.base_url == "https://openrouter.ai/api/v1"
 
 
+def test_aliyun_provider_name_is_treated_as_openai_compatible(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    providers:
+      aliyun:
+        api_key: token
+        base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+        models:
+          - qwen3.6-plus
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+  configs = loader.load(path)
+
+  config = configs["aliyun/qwen3.6-plus"]
+  assert config.provider is ProviderType.OPENAI_COMPATIBLE
+  assert config.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+def test_aliyun_model_suffix_zero_disables_thinking(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    providers:
+      aliyun:
+        api_key: token
+        base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+        models:
+          - qwen3.6-plus (0)
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+  configs = loader.load(path)
+
+  config = configs["aliyun/qwen3.6-plus (0)"]
+  assert config.default_params["enable_thinking"] is False
+  assert "thinking_budget" not in config.default_params
+
+
+def test_aliyun_model_suffix_positive_sets_budget(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    providers:
+      aliyun:
+        api_key: token
+        base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+        models:
+          - qwen3.6-plus (10)
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+  configs = loader.load(path)
+
+  config = configs["aliyun/qwen3.6-plus (10)"]
+  assert config.default_params["enable_thinking"] is True
+  assert config.default_params["thinking_budget"] == 10
+  assert config.model == "qwen3.6-plus"
+
+
+def test_aliyun_model_suffix_negative_one_enables_thinking_without_budget(
+  tmp_path,
+):
+  path = write_config(
+    tmp_path,
+    """
+    providers:
+      aliyun:
+        api_key: token
+        base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+        models:
+          - qwen3.6-plus (-1)
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+  configs = loader.load(path)
+
+  config = configs["aliyun/qwen3.6-plus (-1)"]
+  assert config.default_params["enable_thinking"] is True
+  assert "thinking_budget" not in config.default_params
+
+
+def test_aliyun_model_suffix_rejects_other_negative_values(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    providers:
+      aliyun:
+        api_key: token
+        base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+        models:
+          - qwen3.6-plus (-2)
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+
+  with pytest.raises(ConfigurationError) as exc:
+    loader.load(path)
+
+  assert "thinking suffix" in str(exc.value)
+
+
+def test_qwen36plus_config_keeps_reasoning_levels_as_distinct_models(
+  monkeypatch,
+):
+  monkeypatch.setenv("DASHSCOPE_API_KEY", "token")
+  loader = ConnectorConfigLoader()
+
+  configs = loader.load(
+    Path("config/llms/qwen36plus.yaml"),
+    merge_default=False,
+  )
+
+  assert list(configs.keys()) == [
+    "aliyun/qwen3.6-plus",
+    "aliyun/qwen3.6-plus (0)",
+    "aliyun/qwen3.6-plus (64)",
+    "aliyun/qwen3.6-plus (128)",
+    "aliyun/qwen3.6-plus (512)",
+    "aliyun/qwen3.6-plus (-1)",
+  ]
+  assert configs["aliyun/qwen3.6-plus"].default_params == {}
+  assert configs["aliyun/qwen3.6-plus (0)"].default_params == {
+    "enable_thinking": False,
+  }
+  assert configs["aliyun/qwen3.6-plus (64)"].default_params == {
+    "enable_thinking": True,
+    "thinking_budget": 64,
+  }
+  assert configs["aliyun/qwen3.6-plus (-1)"].default_params == {
+    "enable_thinking": True,
+  }
+
+
 def test_zero_timeout_means_no_client_side_timeout(tmp_path):
   path = write_config(
     tmp_path,

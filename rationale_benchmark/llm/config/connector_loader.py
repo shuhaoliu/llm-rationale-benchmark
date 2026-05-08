@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -25,6 +26,10 @@ STREAMING_KEYS = {
   "stream_handler",
   "incremental",
 }
+
+ALIYUN_MODEL_SUFFIX_PATTERN = re.compile(
+  r"^(?P<model>.+?)\s*\((?P<thinking_budget>-?\d+)\)\s*$"
+)
 
 
 class ConnectorConfigLoader:
@@ -267,7 +272,7 @@ class ConnectorConfigLoader:
 
       for index, model_entry in enumerate(model_entries):
         try:
-          model_name, model_overrides = self._parse_model_entry(
+          selector_name, model_name, model_overrides = self._parse_model_entry(
             model_entry,
             provider=provider_name,
             index=index,
@@ -325,11 +330,11 @@ class ConnectorConfigLoader:
           else:
             message = str(exc)
           errors.append(
-            f"{provider_name}/{model_name}: {message}"
+            f"{provider_name}/{selector_name}: {message}"
           )
           continue
 
-        selector = f"{provider_name}/{model_name}"
+        selector = f"{provider_name}/{selector_name}"
         if config.provider is not provider_type:
           errors.append(
             f"{selector}: provider '{config.provider.value}' "
@@ -395,9 +400,13 @@ class ConnectorConfigLoader:
     *,
     provider: str,
     index: int,
-  ) -> tuple[str, dict[str, Any]]:
+  ) -> tuple[str, str, dict[str, Any]]:
     if isinstance(entry, str):
-      return entry, {}
+      return self._parse_string_model_entry(
+        entry,
+        provider=provider,
+        index=index,
+      )
     if isinstance(entry, dict):
       model_name = entry.get("name")
       if not isinstance(model_name, str) or not model_name.strip():
@@ -407,12 +416,75 @@ class ConnectorConfigLoader:
         )
       overrides = dict(entry)
       overrides.pop("name", None)
-      return model_name, overrides
+      if self._is_aliyun_provider(provider):
+        selector_name, model_name, thinking_overrides = (
+          self._parse_aliyun_model_name(
+          model_name,
+          provider=provider,
+          index=index,
+        )
+        )
+        overrides["default_params"] = self._merge_mapping(
+          thinking_overrides,
+          overrides.get("default_params", {}),
+          field=f"providers.{provider}.models[{index}].default_params",
+        )
+        return selector_name, model_name, overrides
+      return model_name, model_name, overrides
 
     raise ConfigurationError(
       f"providers.{provider}.models[{index}] must be a string or mapping",
       field=f"providers.{provider}.models[{index}]",
     )
+
+  def _parse_string_model_entry(
+    self,
+    entry: str,
+    *,
+    provider: str,
+    index: int,
+  ) -> tuple[str, str, dict[str, Any]]:
+    if self._is_aliyun_provider(provider):
+      return self._parse_aliyun_model_name(
+        entry,
+        provider=provider,
+        index=index,
+      )
+    return entry, entry, {}
+
+  def _parse_aliyun_model_name(
+    self,
+    entry: str,
+    *,
+    provider: str,
+    index: int,
+  ) -> tuple[str, str, dict[str, Any]]:
+    selector_name = entry.strip()
+    match = ALIYUN_MODEL_SUFFIX_PATTERN.match(selector_name)
+    if not match:
+      return selector_name, selector_name, {}
+
+    model_name = match.group("model").strip()
+    budget = int(match.group("thinking_budget"))
+    default_params: dict[str, Any] = {}
+
+    if budget == 0:
+      default_params["enable_thinking"] = False
+    elif budget == -1:
+      default_params["enable_thinking"] = True
+    elif budget > 0:
+      default_params["enable_thinking"] = True
+      default_params["thinking_budget"] = budget
+    else:
+      raise ConfigurationError(
+        (
+          "Aliyun thinking suffix must be 0, -1, or a positive integer "
+          f"for providers.{provider}.models[{index}]"
+        ),
+        field=f"providers.{provider}.models[{index}]",
+      )
+
+    return selector_name, model_name, {"default_params": default_params}
 
   def _normalise_payload(
     self,
@@ -478,6 +550,8 @@ class ConnectorConfigLoader:
     provider: str,
     source: str,
   ) -> ProviderType:
+    if self._is_aliyun_provider(provider):
+      return ProviderType.OPENAI_COMPATIBLE
     if provider.endswith("_openai_compatible"):
       return ProviderType.OPENAI_COMPATIBLE
 
@@ -489,6 +563,9 @@ class ConnectorConfigLoader:
         config_file=source,
         field=f"providers.{provider}",
       ) from exc
+
+  def _is_aliyun_provider(self, provider: str) -> bool:
+    return provider == "aliyun" or provider.endswith("_aliyun")
 
   def _assert_no_streaming(
     self,

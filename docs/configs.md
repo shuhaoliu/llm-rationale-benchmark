@@ -69,10 +69,20 @@ Optional fields:
 |-------------------------------------|------------------------------------------------------------------|
 | `openai`                            | Official OpenAI endpoints.                                       |
 | `{provider}_openai_compatible`      | OpenAI-compatible APIs (e.g., `openrouter_openai_compatible`).   |
+| `aliyun` or `{provider}_aliyun`     | Aliyun OpenAI-compatible APIs with optional thinking suffixes.   |
 | `anthropic`                         | Claude family models.                                            |
 | `gemini`                            | Google Gemini models (requires explicit `endpoint`).             |
 
 Unknown provider keys raise `ConfigurationError`.
+
+For Aliyun providers, model names may optionally carry a thinking suffix in
+parentheses:
+- `qwen3.6-plus` leaves thinking settings unchanged.
+- `qwen3.6-plus (0)` sets `enable_thinking` to `false`.
+- `qwen3.6-plus (10)` sets `enable_thinking` to `true` and
+  `thinking_budget` to `10`.
+- `qwen3.6-plus (-1)` sets `enable_thinking` to `true` without setting
+  `thinking_budget`.
 
 ### Environment Variable Resolution
 - Express secrets as `${ENV_VAR}`; the loader performs shell-style substitution.
