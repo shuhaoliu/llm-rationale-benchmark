@@ -31,7 +31,6 @@ Canonical structure (see `docs/01-llm/configs.md` for a complete specification):
 defaults:
   timeout: 30
   max_retries: 3
-  temperature: 0.7
   max_tokens: 1000
 
 providers:
@@ -52,6 +51,8 @@ providers:
 - Recognized fields: `timeout`, `max_retries`, `temperature`, `max_tokens`,
   `system_prompt`, and any additional parameters supported by connectors.
 - Defaults merge into every provider unless overridden explicitly.
+- If `temperature` is omitted, the connector leaves it unset and relies on the
+  provider's default sampling behavior.
 
 ### Provider Entries
 Each provider map **must** include:

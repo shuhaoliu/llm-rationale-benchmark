@@ -16,7 +16,7 @@ Out of scope: UI integrations, persistence beyond in-memory transcripts, advance
 
 ## Architectural Overview
 - **Configuration Layer**  
-  Parses YAML files into a validated mapping of `LLMConnectorConfig` objects keyed by `"{provider}/{model_id}"`, resolving environment variable references and applying defaults for optional parameters (temperature, timeout, retry policy, output mode).
+  Parses YAML files into a validated mapping of `LLMConnectorConfig` objects keyed by `"{provider}/{model_id}"`, resolving environment variable references and applying configured defaults for optional parameters such as timeout, retry policy, and output mode. Unset request-shaping fields such as `temperature` remain unset so provider defaults apply automatically.
 - **Factory Layer**  
   `LLMConversationFactory` consumes a configuration mapping, a `"{provider}/{model_id}"` selector, and an optional system prompt, then produces a ready-to-use `LLMConversation` while wiring the appropriate provider adapter and enforcing response mode (JSON vs. free text).
 - **Conversation Layer**  
@@ -30,11 +30,12 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
 
 ### Configuration Model
 - Configuration files declare shared values under `defaults` and provider-specific maps under `providers`. Each provider lists one or more entries in `models`, producing fully-qualified selectors of the form `"{provider}/{model_id}"`. Shared defaults (retry policy, response format, etc.) merge into every model unless overridden at the provider or per-model level.
+  Shared defaults only apply when they are explicitly present in configuration.
 - `LLMConnectorConfig` (pydantic model) captures:
   - `provider`: enum (`openai`, `openai_compatible`, `anthropic`, `gemini`).
   - `endpoint`, `api_key`, `model`, `timeout_seconds`, `retry` (max attempts, backoff).
   - `response_format`: enum (`json`, `text`) with `json` as default.
-  - Optional fields: `temperature`, `top_p`, `max_tokens`, `metadata`, `provider_specific`.
+  - Optional fields: `temperature`, `top_p`, `max_tokens`, `metadata`, `provider_specific`. If `temperature` is omitted in configuration, connectors do not send a temperature parameter and the provider's own default is used.
   - `system_prompt` to seed conversation context; CLI may override.
 - Loader resolves YAML via `PyYAML`, expands `${ENV_VAR}` references, validates ranges (e.g., `0.0 <= temperature <= 2.0`) and required keys per provider before returning any configs. Invalid entries (malformed keys, unsupported provider/model tuples, or failing schema constraints) abort the load and raise `ConfigurationError` summarizing all offending settings.
 

@@ -21,7 +21,6 @@ Each configuration file is a YAML document with two top-level sections:
 defaults:
   timeout: 30
   max_retries: 3
-  temperature: 0.7
   max_tokens: 1000
 
 providers:
@@ -46,7 +45,7 @@ providers:
 - `timeout`: Integer seconds before requests are aborted (default: 30). Use `0`
   to disable client-side request deadlines.
 - `max_retries`: Maximum retry attempts for transient errors (default: 3).
-- `temperature`: Floating-point value `0.0–2.0`. Controls creativity; defaults to `0.7`.
+- `temperature`: Floating-point value `0.0–2.0`. Controls creativity. When omitted, the connector does not send a temperature parameter and the provider default applies.
 - `max_tokens`: Maximum tokens requested per completion (default: 1000).
 - `system_prompt`: Fallback system prompt if none is supplied via CLI.
 - Any additional fields under `defaults` become part of the shared baseline and are merged into each provider unless overridden.
@@ -63,6 +62,7 @@ Optional fields:
 - `timeout`: Provider-specific override of the default timeout.
 - `max_retries`: Provider-specific retry override.
 - `default_params`: Map of request parameters applied to every call. Use for `temperature`, `max_tokens`, `top_p`, `stop_sequences`, etc. These values override anything inherited from `defaults`.
+- Leaving `temperature` out of both the config fields and `default_params` preserves the provider's native default behavior.
 - `provider_specific`: Adapter-specific settings (e.g., Anthropic `version`, Gemini `safety_settings`, custom headers). Streaming parameters (`stream`, `streaming`, `stream_options`) are forbidden and raise validation errors.
 - `metadata`: Optional free-form dictionary stored with archives for reporting.
 
@@ -145,7 +145,7 @@ providers:
 ```
 
 This file leaves all default providers untouched except for OpenAI. It introduces a new `local` provider with a longer timeout and no authentication. Runtime merging yields:
-- OpenAI inherits global defaults but replaces its model list and temperature.
+- OpenAI inherits global defaults but replaces its model list and explicit temperature setting.
 - Anthropic (defined in `default-llms.yaml`) remains available unless explicitly removed.
 - The new `local` provider becomes selectable in CLI commands.
 

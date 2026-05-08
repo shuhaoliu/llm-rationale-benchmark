@@ -300,6 +300,19 @@ def test_qwen36plus_config_keeps_reasoning_levels_as_distinct_models(
   }
 
 
+def test_default_llms_does_not_set_a_global_temperature(monkeypatch):
+  monkeypatch.setenv("DASHSCOPE_API_KEY", "token")
+  loader = ConnectorConfigLoader()
+
+  configs = loader.load(
+    Path("config/llms/default-llms.yaml"),
+    merge_default=False,
+  )
+
+  assert configs
+  assert all(config.temperature is None for config in configs.values())
+
+
 def test_zero_timeout_means_no_client_side_timeout(tmp_path):
   path = write_config(
     tmp_path,
