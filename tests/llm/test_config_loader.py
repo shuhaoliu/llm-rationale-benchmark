@@ -11,7 +11,6 @@ from rationale_benchmark.llm.config.connector_loader import ConnectorConfigLoade
 from rationale_benchmark.llm.config.connector_models import (
   LLMConnectorConfig,
   ProviderType,
-  ResponseFormat,
 )
 from rationale_benchmark.llm.exceptions import ConfigurationError
 
@@ -30,7 +29,6 @@ def test_load_merges_defaults_and_resolves_env(tmp_path, monkeypatch):
       """
       defaults:
         timeout: 45
-        response_format: json
         max_retries: 2
         default_params:
           temperature: 0.5
@@ -51,7 +49,6 @@ def test_load_merges_defaults_and_resolves_env(tmp_path, monkeypatch):
     tmp_path,
     """
     defaults:
-      response_format: text
       default_params:
         top_p: 0.9
     providers:
@@ -66,7 +63,6 @@ def test_load_merges_defaults_and_resolves_env(tmp_path, monkeypatch):
         api_key: plain-token
         models:
           - claude-mini
-        response_format: json
         retry:
           max_attempts: 4
     """,
@@ -84,7 +80,6 @@ def test_load_merges_defaults_and_resolves_env(tmp_path, monkeypatch):
   assert isinstance(openai_config, LLMConnectorConfig)
   assert openai_config.provider is ProviderType.OPENAI
   assert openai_config.timeout_seconds == 45
-  assert openai_config.response_format is ResponseFormat.TEXT
   assert openai_config.retry.max_attempts == 2
   assert openai_config.max_tokens == 256
   assert openai_config.api_key == "secret-token"
@@ -95,7 +90,6 @@ def test_load_merges_defaults_and_resolves_env(tmp_path, monkeypatch):
   assert "openai/gpt-backup" not in configs
 
   anthropic_config = configs["anthropic/claude-mini"]
-  assert anthropic_config.response_format is ResponseFormat.JSON
   assert anthropic_config.retry.max_attempts == 4
 
 
@@ -160,7 +154,7 @@ def test_suffix_openai_compatible_provider(tmp_path):
   assert config.base_url == "https://openrouter.ai/api/v1"
 
 
-def test_aliyun_provider_name_is_treated_as_openai_compatible(tmp_path):
+def test_aliyun_provider_name_is_supported_as_dedicated_provider(tmp_path):
   path = write_config(
     tmp_path,
     """
@@ -177,8 +171,29 @@ def test_aliyun_provider_name_is_treated_as_openai_compatible(tmp_path):
   configs = loader.load(path)
 
   config = configs["aliyun/qwen3.6-plus"]
-  assert config.provider is ProviderType.OPENAI_COMPATIBLE
+  assert config.provider is ProviderType.ALIYUN
   assert config.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+def test_suffix_aliyun_provider_is_rejected(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    providers:
+      dashscope_aliyun:
+        api_key: token
+        base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+        models:
+          - qwen3.6-plus
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+
+  with pytest.raises(ConfigurationError) as exc:
+    loader.load(path)
+
+  assert "Unknown provider" in str(exc.value)
 
 
 def test_aliyun_model_suffix_zero_disables_thinking(tmp_path):
@@ -268,35 +283,53 @@ def test_aliyun_model_suffix_rejects_other_negative_values(tmp_path):
   assert "thinking suffix" in str(exc.value)
 
 
-def test_qwen36plus_config_keeps_reasoning_levels_as_distinct_models(
+def test_thinking_config_keeps_reasoning_levels_as_distinct_models(
   monkeypatch,
 ):
   monkeypatch.setenv("DASHSCOPE_API_KEY", "token")
   loader = ConnectorConfigLoader()
 
   configs = loader.load(
-    Path("config/llms/qwen36plus.yaml"),
+    Path("config/llms/thinking.yaml"),
     merge_default=False,
   )
 
   assert list(configs.keys()) == [
-    "aliyun/qwen3.6-plus",
     "aliyun/qwen3.6-plus (0)",
-    "aliyun/qwen3.6-plus (64)",
-    "aliyun/qwen3.6-plus (128)",
-    "aliyun/qwen3.6-plus (512)",
     "aliyun/qwen3.6-plus (-1)",
+    "aliyun/qwen3.5-plus (0)",
+    "aliyun/qwen3.5-plus (-1)",
+    "aliyun/deepseek-v4-pro (0)",
+    "aliyun/deepseek-v4-pro (-1)",
+    "aliyun/glm-5.1 (0)",
+    "aliyun/glm-5.1 (-1)",
   ]
-  assert configs["aliyun/qwen3.6-plus"].default_params == {}
   assert configs["aliyun/qwen3.6-plus (0)"].default_params == {
     "enable_thinking": False,
   }
-  assert configs["aliyun/qwen3.6-plus (64)"].default_params == {
-    "enable_thinking": True,
-    "thinking_budget": 64,
-  }
   assert configs["aliyun/qwen3.6-plus (-1)"].default_params == {
     "enable_thinking": True,
+  }
+
+
+def test_deepseek_config_defaults_to_runnable_models(monkeypatch):
+  monkeypatch.setenv("DASHSCOPE_API_KEY", "token")
+  loader = ConnectorConfigLoader()
+
+  configs = loader.load(
+    Path("config/llms/deepseek.yaml"),
+    merge_default=False,
+  )
+
+  assert list(configs.keys()) == [
+    "aliyun/deepseek-v4-pro (0)",
+    "aliyun/deepseek-v3.2 (0)",
+  ]
+  assert configs["aliyun/deepseek-v4-pro (0)"].default_params == {
+    "enable_thinking": False,
+  }
+  assert configs["aliyun/deepseek-v3.2 (0)"].default_params == {
+    "enable_thinking": False,
   }
 
 
@@ -354,3 +387,25 @@ def test_streaming_parameters_are_rejected(tmp_path):
     loader.load(path)
 
   assert "Streaming parameters" in str(exc.value)
+
+
+def test_response_format_configuration_is_rejected(tmp_path):
+  path = write_config(
+    tmp_path,
+    """
+    defaults:
+      response_format: text
+    providers:
+      openai:
+        api_key: token
+        models:
+          - gpt-4
+    """,
+  )
+
+  loader = ConnectorConfigLoader()
+
+  with pytest.raises(ConfigurationError) as exc:
+    loader.load(path)
+
+  assert "response_format" in str(exc.value)

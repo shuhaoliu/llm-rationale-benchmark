@@ -26,6 +26,7 @@ STREAMING_KEYS = {
   "stream_handler",
   "incremental",
 }
+FORBIDDEN_CONFIG_KEYS = {"response_format"}
 
 ALIYUN_MODEL_SUFFIX_PATTERN = re.compile(
   r"^(?P<model>.+?)\s*\((?P<thinking_budget>-?\d+)\)\s*$"
@@ -542,6 +543,24 @@ class ConnectorConfigLoader:
       model=model_name,
       field="provider_specific",
     )
+    self._assert_no_forbidden_keys(
+      payload,
+      provider=provider_name,
+      model=model_name,
+      field="configuration",
+    )
+    self._assert_no_forbidden_keys(
+      default_params,
+      provider=provider_name,
+      model=model_name,
+      field="default_params",
+    )
+    self._assert_no_forbidden_keys(
+      provider_specific,
+      provider=provider_name,
+      model=model_name,
+      field="provider_specific",
+    )
 
     return payload
 
@@ -551,7 +570,7 @@ class ConnectorConfigLoader:
     source: str,
   ) -> ProviderType:
     if self._is_aliyun_provider(provider):
-      return ProviderType.OPENAI_COMPATIBLE
+      return ProviderType.ALIYUN
     if provider.endswith("_openai_compatible"):
       return ProviderType.OPENAI_COMPATIBLE
 
@@ -565,7 +584,7 @@ class ConnectorConfigLoader:
       ) from exc
 
   def _is_aliyun_provider(self, provider: str) -> bool:
-    return provider == "aliyun" or provider.endswith("_aliyun")
+    return provider == "aliyun"
 
   def _assert_no_streaming(
     self,
@@ -580,6 +599,22 @@ class ConnectorConfigLoader:
       joined = ", ".join(sorted(blocked))
       raise ConfigurationError(
         f"Streaming parameters not supported ({joined}) for {provider}/{model}",
+        field=f"{provider}.{model}.{field}",
+      )
+
+  def _assert_no_forbidden_keys(
+    self,
+    value: dict[str, Any],
+    *,
+    provider: str,
+    model: str,
+    field: str,
+  ) -> None:
+    blocked = FORBIDDEN_CONFIG_KEYS.intersection(self._iter_all_keys(value))
+    if blocked:
+      joined = ", ".join(sorted(blocked))
+      raise ConfigurationError(
+        f"Unsupported configuration key ({joined}) for {provider}/{model}",
         field=f"{provider}.{model}.{field}",
       )
 

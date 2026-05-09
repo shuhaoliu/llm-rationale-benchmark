@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List
 
-from .config.connector_models import LLMConnectorConfig, ResponseFormat
+from .config.connector_models import LLMConnectorConfig
 from .exceptions import (
   ProviderError,
   StreamingNotSupportedError,
@@ -43,7 +43,7 @@ class BaseProviderClient(ABC):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
     stream: bool = False,
   ) -> ProviderResponse:
     """Generate a response from the provider."""
@@ -55,19 +55,20 @@ class BaseProviderClient(ABC):
         )
       chunks = list(
         self.stream_generate(
-          messages, response_format=response_format
+          messages,
+          output_schema=output_schema,
         )
       )
       content = "".join(chunks)
       return ProviderResponse(content=content, raw={"chunks": chunks})
 
-    return self._generate(messages, response_format=response_format)
+    return self._generate(messages, output_schema=output_schema)
 
   def stream_generate(
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> Iterable[str]:
     """Return streaming chunks. Implemented by subclasses when supported."""
 
@@ -80,7 +81,7 @@ class BaseProviderClient(ABC):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> ProviderResponse:
     """Perform a non-streaming call against the provider."""
 
@@ -97,7 +98,7 @@ class StaticResponseProvider(BaseProviderClient):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> ProviderResponse:
     try:
       content = self._responses[self._index]
@@ -108,4 +109,3 @@ class StaticResponseProvider(BaseProviderClient):
       ) from exc
     self._index += 1
     return ProviderResponse(content=content, raw={"messages": messages})
-

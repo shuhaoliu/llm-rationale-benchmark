@@ -10,7 +10,6 @@ from click.testing import CliRunner
 from rationale_benchmark.cli import main
 from rationale_benchmark.llm.config.connector_models import (
   LLMConnectorConfig,
-  ResponseFormat,
 )
 from rationale_benchmark.llm.provider_client import (
   BaseProviderClient,
@@ -25,7 +24,7 @@ class DummyProvider(BaseProviderClient):
     self,
     messages,
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     return ProviderResponse(
       content='{"answer": 3, "reasoning": "Test rationale"}',
@@ -80,6 +79,13 @@ def _write_questionnaire(root: Path, name: str) -> None:
               - id: "q1"
                 type: "rating-5"
                 prompt: "Select a rating."
+                output_schema:
+                  properties:
+                    answer:
+                      type: "integer"
+                      minimum: 1
+                      maximum: 5
+                  required: ["answer"]
                 scoring:
                   total: 5
                   weights: [0, 1, 2, 3, 5]
@@ -244,10 +250,8 @@ def test_explicit_llm_config_does_not_merge_default_models(
   llm_path.write_text(
     dedent(
       """
-      defaults:
-        response_format: text
       providers:
-        aliyun_openai_compatible:
+        aliyun:
           api_key: "test"
           base_url: "https://example.test/v1"
           models:
@@ -279,9 +283,7 @@ def test_explicit_llm_config_does_not_merge_default_models(
   records = _jsonl_records(
     (output_dir / "responses.jsonl").read_text(encoding="utf-8")
   )
-  assert [record["llm_id"] for record in records] == [
-    "aliyun_openai_compatible/qwen-test"
-  ]
+  assert [record["llm_id"] for record in records] == ["aliyun/qwen-test"]
 
 
 def test_parallel_sessions_option_is_not_supported(

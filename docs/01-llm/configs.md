@@ -30,8 +30,6 @@ providers:
     models:
       - "gpt-4"
       - "gpt-3.5-turbo"
-    default_params:
-      response_format: "json"
     provider_specific:
       organization: "${OPENAI_ORG_ID}"
 ```
@@ -48,6 +46,8 @@ providers:
 - `temperature`: Floating-point value `0.0–2.0`. Controls creativity. When omitted, the connector does not send a temperature parameter and the provider default applies.
 - `max_tokens`: Maximum tokens requested per completion (default: 1000).
 - `system_prompt`: Fallback system prompt if none is supplied via CLI.
+- Structural output is always enabled by the connector layer. Configuration
+  files must not define response-format settings such as `response_format`.
 - Any additional fields under `defaults` become part of the shared baseline and are merged into each provider unless overridden.
 
 ## Provider Entries
@@ -63,6 +63,9 @@ Optional fields:
 - `max_retries`: Provider-specific retry override.
 - `default_params`: Map of request parameters applied to every call. Use for `temperature`, `max_tokens`, `top_p`, `stop_sequences`, etc. These values override anything inherited from `defaults`.
 - Leaving `temperature` out of both the config fields and `default_params` preserves the provider's native default behavior.
+- Response-format controls are forbidden in provider configs. The connector
+  always requests structured output and derives the concrete schema from the
+  calling workflow.
 - `provider_specific`: Adapter-specific settings (e.g., Anthropic `version`, Gemini `safety_settings`, custom headers). Streaming parameters (`stream`, `streaming`, `stream_options`) are forbidden and raise validation errors.
 - `metadata`: Optional free-form dictionary stored with archives for reporting.
 
@@ -120,6 +123,8 @@ The loader validates every configuration before exposing it:
 - Temperatures must be within `0.0–2.0`; negative token limits or retry counts are rejected.
 - Provider identifiers must be in the supported registry.
 - Environment references must resolve.
+- Response-format settings such as `response_format` are rejected anywhere in
+  the YAML document.
 - Streaming controls are disallowed and rejected.
 - Validation errors report the file path and the offending field to aid debugging.
 

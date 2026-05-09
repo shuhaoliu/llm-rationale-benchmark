@@ -15,12 +15,25 @@ questionnaire:
         - id: "risk-rating"
           type: "rating-5"
           prompt: "Rate the risk."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 5
+            required: ["answer"]
           scoring:
             total: 5
             weights: [1, 2, 3, 4, 5]
         - id: "risk-choice"
           type: "choice"
           prompt: "Choose a risk option."
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["low", "high"]
+            required: ["answer"]
           options:
             low: "Low"
             high: "High"
@@ -37,6 +50,13 @@ questionnaire:
         - id: "trust-rating"
           type: "rating-5"
           prompt: "Rate trust."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 5
+            required: ["answer"]
           scoring:
             total: 5
             weights: [1, 2, 3, 4, 5]

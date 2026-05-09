@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..config.connector_models import LLMConnectorConfig, ResponseFormat
+from ..config.connector_models import LLMConnectorConfig
 from ..exceptions import (
   AuthenticationError,
   ProviderError,
@@ -48,9 +48,9 @@ class AnthropicClient(JSONHTTPProvider):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> ProviderResponse:
-    payload = self._build_payload(messages, response_format)
+    payload = self._build_payload(messages, output_schema)
     url = f"{self.base_url}/v1/messages"
     data, headers = self._post_json(url, self.headers, payload)
 
@@ -72,7 +72,7 @@ class AnthropicClient(JSONHTTPProvider):
   def _build_payload(
     self,
     messages: List[dict[str, str]],
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> Dict[str, Any]:
     system_prompt, converted = self._convert_messages(messages)
 
@@ -94,8 +94,12 @@ class AnthropicClient(JSONHTTPProvider):
     if self.config.top_p is not None:
       payload.setdefault("top_p", self.config.top_p)
 
-    if response_format is ResponseFormat.JSON:
-      payload.setdefault("response_format", {"type": "json_object"})
+    payload["output_config"] = {
+      "format": {
+        "type": "json_schema",
+        "schema": output_schema,
+      }
+    }
 
     return payload
 
@@ -180,4 +184,3 @@ class AnthropicClient(JSONHTTPProvider):
       )
 
     raise ProviderError(provider, message)
-

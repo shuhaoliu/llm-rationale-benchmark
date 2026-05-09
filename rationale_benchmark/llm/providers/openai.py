@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
-from ..config.connector_models import LLMConnectorConfig, ResponseFormat
+from ..config.connector_models import LLMConnectorConfig
 from ..exceptions import (
   AuthenticationError,
   ModelNotFoundError,
@@ -39,9 +40,9 @@ class OpenAIChatClient(JSONHTTPProvider):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> ProviderResponse:
-    payload = self._build_payload(messages, response_format)
+    payload = self._build_payload(messages, output_schema)
     url = f"{self.base_url}/chat/completions"
     data, headers = self._post_json(url, self.headers, payload)
 
@@ -54,7 +55,7 @@ class OpenAIChatClient(JSONHTTPProvider):
         cause=exc,
       ) from exc
 
-    content = self._extract_content(choice, response_format)
+    content = self._extract_content(choice)
     metadata = {
       "usage": data.get("usage", {}),
       "id": data.get("id"),
@@ -71,7 +72,7 @@ class OpenAIChatClient(JSONHTTPProvider):
   def _build_payload(
     self,
     messages: List[dict[str, str]],
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
       "model": self.config.model,
@@ -87,15 +88,21 @@ class OpenAIChatClient(JSONHTTPProvider):
     if self.config.max_tokens is not None:
       payload.setdefault("max_tokens", self.config.max_tokens)
 
-    if response_format is ResponseFormat.JSON:
-      payload.setdefault("response_format", {"type": "json_object"})
+    if self._uses_native_structured_output():
+      payload["response_format"] = {
+        "type": "json_schema",
+        "json_schema": {
+          "name": self._schema_name(output_schema),
+          "strict": True,
+          "schema": output_schema,
+        },
+      }
 
     return payload
 
   def _extract_content(
     self,
     choice: Dict[str, Any],
-    response_format: ResponseFormat,
   ) -> str:
     message = choice.get("message", {})
     content = message.get("content")
@@ -110,9 +117,17 @@ class OpenAIChatClient(JSONHTTPProvider):
         self.config.provider.value,
         "Missing content in OpenAI response",
       )
-    if response_format is ResponseFormat.JSON:
-      return content.strip()
-    return content
+    return content.strip()
+
+  def _schema_name(self, output_schema: dict[str, Any]) -> str:
+    title = output_schema.get("title")
+    if not isinstance(title, str) or not title.strip():
+      return "structured_response"
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", title.strip())
+    return slug or "structured_response"
+
+  def _uses_native_structured_output(self) -> bool:
+    return True
 
   def _handle_http_error(
     self,
@@ -144,4 +159,3 @@ class OpenAIChatClient(JSONHTTPProvider):
       )
 
     raise ProviderError(provider, message)
-

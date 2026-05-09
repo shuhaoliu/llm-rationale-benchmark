@@ -34,6 +34,13 @@ def test_cli_validates_file(tmp_path: Path) -> None:
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -64,6 +71,13 @@ def test_cli_supports_json_output(tmp_path: Path) -> None:
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -96,6 +110,12 @@ def test_cli_reports_validation_errors(tmp_path: Path) -> None:
             - id: "q1"
               type: "choice"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "string"
+                    enum: ["a", "b"]
+                required: ["answer"]
               scoring:
                 total: 2
                 weights:

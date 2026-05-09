@@ -49,12 +49,25 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
             - id: "workload_01"
               type: "rating-5"
               prompt: "I feel overwhelmed by tasks."
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 3, 4, 5]
             - id: "workload_02"
               type: "choice"
               prompt: "Which statement best reflects your current workload?"
+              output_schema:
+                properties:
+                  answer:
+                    type: "string"
+                    enum: ["low", "high"]
+                required: ["answer"]
               options:
                 low: "Manageable"
                 high: "Overwhelming"
@@ -91,8 +104,61 @@ def test_load_questionnaire_success(questionnaire_dir: Path) -> None:
     "4": 4,
     "5": 5,
   }
+  assert rating.output_schema == {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+      "answer": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5,
+      }
+    },
+    "required": ["answer"],
+    "title": "workload_01",
+  }
   choice = section.questions[1]
   assert choice.options == {"low": "Manageable", "high": "Overwhelming"}
+  assert choice.output_schema == {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+      "answer": {
+        "type": "string",
+        "enum": ["low", "high"],
+      }
+    },
+    "required": ["answer"],
+    "title": "workload_02",
+  }
+
+
+def test_missing_output_schema_raises(questionnaire_dir: Path) -> None:
+  _write_yaml(
+    questionnaire_dir,
+    "missing-output-schema",
+    """
+    questionnaire:
+      id: "missing-output-schema"
+      name: "Missing Output Schema"
+      system_prompt: "You answer using short sentences."
+      metadata:
+        default_population: 1
+      sections:
+        - name: "Only"
+          questions:
+            - id: "q1"
+              type: "rating-5"
+              prompt: "Prompt"
+              scoring:
+                total: 5
+                weights: [0, 1, 2, 3, 4]
+    """,
+  )
+
+  with pytest.raises(QuestionnaireConfigError) as error:
+    load_questionnaire("missing-output-schema", questionnaire_dir.parent)
+  assert error.value.location == "questionnaire.sections.0.questions.0.output_schema"
 
 
 def test_missing_system_prompt_raises(questionnaire_dir: Path) -> None:
@@ -111,6 +177,13 @@ def test_missing_system_prompt_raises(questionnaire_dir: Path) -> None:
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -138,6 +211,13 @@ def test_missing_default_population_raises(questionnaire_dir: Path) -> None:
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -165,6 +245,13 @@ def test_non_positive_default_population_raises(questionnaire_dir: Path) -> None
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -195,6 +282,13 @@ def test_non_positive_human_population_raises(questionnaire_dir: Path) -> None:
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -222,12 +316,25 @@ def test_duplicate_question_id_raises(questionnaire_dir: Path) -> None:
             - id: "q1"
               type: "rating-5"
               prompt: "One"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
             - id: "q1"
               type: "choice"
               prompt: "Two"
+              output_schema:
+                properties:
+                  answer:
+                    type: "string"
+                    enum: ["a", "b"]
+                required: ["answer"]
               options:
                 a: "A"
                 b: "B"
@@ -260,6 +367,12 @@ def test_choice_weights_mismatch_raises(questionnaire_dir: Path) -> None:
             - id: "q1"
               type: "choice"
               prompt: "Two"
+              output_schema:
+                properties:
+                  answer:
+                    type: "string"
+                    enum: ["a", "b"]
+                required: ["answer"]
               options:
                 a: "A"
                 b: "B"
@@ -291,6 +404,13 @@ def test_list_questionnaires_returns_file_stems(questionnaire_dir: Path) -> None
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]
@@ -312,6 +432,13 @@ def test_list_questionnaires_returns_file_stems(questionnaire_dir: Path) -> None
             - id: "q1"
               type: "rating-5"
               prompt: "Prompt"
+              output_schema:
+                properties:
+                  answer:
+                    type: "integer"
+                    minimum: 1
+                    maximum: 5
+                required: ["answer"]
               scoring:
                 total: 5
                 weights: [0, 1, 2, 3, 4]

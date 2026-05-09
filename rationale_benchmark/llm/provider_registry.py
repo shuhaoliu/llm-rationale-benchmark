@@ -8,6 +8,7 @@ from .config.connector_models import LLMConnectorConfig, ProviderType
 from .exceptions import ConfigurationError
 from .provider_client import BaseProviderClient
 from .providers import (
+  AliyunClient,
   AnthropicClient,
   GeminiClient,
   OpenAIChatClient,
@@ -56,5 +57,6 @@ class ProviderRegistry:
   def _install_builtin(self) -> None:
     self._registry[ProviderType.OPENAI] = OpenAIChatClient
     self._registry[ProviderType.OPENAI_COMPATIBLE] = OpenAICompatibleClient
+    self._registry[ProviderType.ALIYUN] = AliyunClient
     self._registry[ProviderType.ANTHROPIC] = AnthropicClient
     self._registry[ProviderType.GEMINI] = GeminiClient

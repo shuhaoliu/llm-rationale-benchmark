@@ -14,6 +14,7 @@ from rationale_benchmark.llm.exceptions import (
   ConfigurationError,
   ConversationArchivedError,
   LLMConnectorError,
+  ProviderError,
   ValidationFailedError,
 )
 from rationale_benchmark.questionnaire.errors import AnswerValidationError
@@ -23,6 +24,7 @@ from rationale_benchmark.questionnaire.models import (
   QuestionType,
   Section,
 )
+from rationale_benchmark.questionnaire.output_schema import resolve_output_schema
 from rationale_benchmark.questionnaire.scoring import validate_answer
 from rationale_benchmark.runner.progress_display import QueryProgressDisplayProtocol
 from rationale_benchmark.runner.prompts import build_prompt
@@ -466,6 +468,24 @@ class BenchmarkRunner:
         canonical_response = None
         question_errors.append(error)
         section_errors.append(error)
+      except ProviderError as exc:
+        retry_count = self._retry_count_for_question(
+          conversation,
+          attempts_before,
+        )
+        error = self._question_error(
+          llm_id,
+          questionnaire.id,
+          population_index,
+          section.name,
+          question.id,
+          "provider",
+          str(exc),
+          retry_count=retry_count,
+        )
+        canonical_response = None
+        question_errors.append(error)
+        section_errors.append(error)
       except Exception as exc:  # pragma: no cover - defensive
         retry_count = self._retry_count_for_question(
           conversation,
@@ -626,7 +646,12 @@ class BenchmarkRunner:
           section_index,
         )
       query_time = now_utc()
-      response = await asyncio.to_thread(conversation.ask, prompt, validator)
+      response = await asyncio.to_thread(
+        conversation.ask,
+        prompt,
+        resolve_output_schema(question),
+        validator,
+      )
     if canonical_response is None:
       canonical_response = self._canonicalize_response(question, response)
     return canonical_response, response, query_time

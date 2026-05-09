@@ -10,6 +10,7 @@ from rationale_benchmark.llm.config.connector_models import (
 )
 from rationale_benchmark.llm.exceptions import ConfigurationError
 from rationale_benchmark.llm.provider_registry import ProviderRegistry
+from rationale_benchmark.llm.providers.aliyun import AliyunClient
 from rationale_benchmark.llm.providers.openai_compatible import (
   OpenAICompatibleClient,
 )
@@ -54,3 +55,18 @@ def test_openai_compatible_requires_endpoint():
 
   with pytest.raises(ConfigurationError):
     OpenAICompatibleClient(config)
+
+
+def test_registry_provides_aliyun_client():
+  registry = ProviderRegistry()
+  config = LLMConnectorConfig(
+    provider=ProviderType.ALIYUN,
+    model="qwen3.6-plus",
+    api_key="secret",
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+  )
+
+  client = registry.create(config)
+
+  assert isinstance(client, AliyunClient)
+  assert client.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"

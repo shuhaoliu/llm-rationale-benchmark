@@ -16,17 +16,28 @@ from rationale_benchmark.llm.exceptions import ConfigurationError
 from rationale_benchmark.llm.provider_client import BaseProviderClient, ProviderResponse
 from rationale_benchmark.llm.provider_registry import ProviderRegistry
 
+OUTPUT_SCHEMA = {
+  "type": "object",
+  "additionalProperties": False,
+  "properties": {
+    "echo": {
+      "type": "string",
+    }
+  },
+  "required": ["echo"],
+  "title": "echo_response",
+}
+
 
 class EchoProvider(BaseProviderClient):
   def __init__(self, config):
     super().__init__(config)
     self.calls = 0
 
-  def _generate(self, messages, *, response_format):
+  def _generate(self, messages, *, output_schema):
     self.calls += 1
     reply = messages[-1]["content"].upper()
-    if response_format is ResponseFormat.JSON:
-      reply = "{\"echo\": \"" + reply + "\"}"
+    reply = "{\"echo\": \"" + reply + "\"}"
     return ProviderResponse(content=reply, raw={"messages": messages})
 
 
@@ -69,7 +80,11 @@ def test_factory_creates_conversation_and_reuses_client(tmp_path):
   assert conversation_one.provider_client is conversation_two.provider_client
   assert conversation_one.system_prompt == "echo"
 
-  response = conversation_two.ask("hello", validator=lambda r: True)
+  response = conversation_two.ask(
+    "hello",
+    OUTPUT_SCHEMA,
+    validator=lambda r: True,
+  )
   assert response.parsed == {"echo": "HELLO"}
 
 

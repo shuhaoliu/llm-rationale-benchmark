@@ -16,7 +16,7 @@ from rationale_benchmark.llm.providers.base import JSONHTTPProvider
 class DummyHTTPProvider(JSONHTTPProvider):
   """Minimal concrete provider for testing shared HTTP behavior."""
 
-  def _generate(self, messages, *, response_format):  # pragma: no cover
+  def _generate(self, messages, *, output_schema):  # pragma: no cover
     raise NotImplementedError
 
 

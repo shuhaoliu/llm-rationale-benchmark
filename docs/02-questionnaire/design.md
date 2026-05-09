@@ -39,12 +39,25 @@ questionnaire:
         - id: "workload_01"
           type: "rating-5"
           prompt: "I feel overwhelmed by tasks."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 5
+            required: ["answer"]
           scoring:
             total: 5
             weights: [0, 1, 3, 4, 5]
         - id: "workload_02"
           type: "choice"
           prompt: "Which statement best reflects your current workload?"
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["low", "medium", "high"]
+            required: ["answer"]
           options:
             low: "Manageable"
             medium: "Challenging"
@@ -87,6 +100,9 @@ questionnaire:
 - `type`: supported values `"rating-5"`, `"rating-7"`, `"rating-11"`, `"choice"`.
   Future types must register validation rules and scoring semantics.
 - `prompt`: plain-text or markdown question text.
+- `output_schema`: required structured-output schema for this question. It must
+  define the response object expected from the LLM and align with the declared
+  question type. The canonical answer lives in the required `answer` field.
 - `options`: required only for `"choice"` questions. Mapping of option keys to
   human readable labels. Keys double as canonical answer IDs.
 - `scoring`: mapping containing
@@ -112,6 +128,10 @@ friendly error messages.
 2. **Semantic validation** to catch domain-specific expectations:
    - Question IDs must be globally unique within a questionnaire.
    - Section names must be distinct.
+   - Every question must define `output_schema`.
+   - `output_schema.properties.answer` must exist and match the question type:
+     integer with the correct min/max for rating questions, string enum matching
+     `options` for choice questions.
    - Rating question weight lists must include exactly `X` entries and stay
      within `[0, total]`.
    - Choice question weights must cover exactly the declared options.
@@ -143,6 +163,7 @@ class Question:
   id: str
   type: QuestionType         # Enum wrapper over raw string types
   prompt: str
+  output_schema: dict[str, Any]
   options: dict[str, str] | None
   scoring: ScoringRule
 
@@ -185,8 +206,13 @@ During load, rating question weight lists are normalized into dictionaries whose
 keys are stringified integers (`"1"`, `"2"`, …) so downstream scoring logic can
 address all question types uniformly.
 
+Question output schemas are preserved on the loaded `Question` objects so the
+runner can pass them directly to the LLM connector when asking each question.
+
 ### Answer Validation
-Before scoring, every answer passes a format check derived from `QuestionType`.
+Before scoring, every LLM response must satisfy the question's
+`output_schema`. The scorer then validates the extracted `answer` field against
+the rules derived from `QuestionType`.
 
 | Type        | Validator                                                     |
 |-------------|---------------------------------------------------------------|

@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -14,7 +14,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import click
 
-from rationale_benchmark.llm.config.connector_models import ResponseFormat
 from rationale_benchmark.llm.conversation import ConversationTurn, LLMResponse
 from rationale_benchmark.llm.conversation_factory import (
   LLMConversationFactory,
@@ -32,6 +31,31 @@ DEFAULT_QUESTIONS: tuple[str, ...] = (
   "List three creative uses for a paperclip and explain the reasoning.",
   "How would you describe the benefits of daily journaling to a teenager?",
 )
+
+
+def _response_schema(response_format: str) -> dict[str, Any]:
+  if response_format == "json":
+    answer_schema: dict[str, Any] = {
+      "anyOf": [
+        {"type": "object"},
+        {"type": "array"},
+        {"type": "string"},
+        {"type": "number"},
+        {"type": "integer"},
+        {"type": "boolean"},
+        {"type": "null"},
+      ]
+    }
+  else:
+    answer_schema = {"type": "string"}
+
+  return {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"answer": answer_schema},
+    "required": ["answer"],
+    "title": "qwen_response",
+  }
 
 
 def _normalise_selector(
@@ -246,18 +270,17 @@ def main(
     _emit_error(f"Connector setup failed: {exc}")
     sys.exit(1)
 
-  desired_format = (
-    ResponseFormat.JSON if response_format == "json" else ResponseFormat.TEXT
-  )
-  if conversation.config.response_format is not desired_format:
-    conversation.config.response_format = desired_format
-
   prompts = list(_resolve_questions(questions))
   responses: list[LLMResponse] = []
+  output_schema = _response_schema(response_format)
 
   try:
     for index, prompt in enumerate(prompts, start=1):
-      response = conversation.ask(prompt, max_attempts=max_attempts)
+      response = conversation.ask(
+        prompt,
+        output_schema,
+        max_attempts=max_attempts,
+      )
       responses.append(response)
   except KeyboardInterrupt:
     _emit_error("\nInterrupted by user.")

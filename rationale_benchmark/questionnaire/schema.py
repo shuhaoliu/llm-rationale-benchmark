@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -14,6 +16,7 @@ class QuestionSchema(BaseModel):
   id: str
   type: str
   prompt: str
+  output_schema: dict[str, Any]
   options: dict[str, str] | None = None
   scoring: ScoringSchema
 

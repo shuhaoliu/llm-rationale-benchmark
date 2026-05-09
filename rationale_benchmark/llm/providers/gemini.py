@@ -5,7 +5,7 @@ from __future__ import annotations
 import urllib.parse
 from typing import Any, Dict, List
 
-from ..config.connector_models import LLMConnectorConfig, ResponseFormat
+from ..config.connector_models import LLMConnectorConfig
 from ..exceptions import (
   AuthenticationError,
   ProviderError,
@@ -30,9 +30,9 @@ class GeminiClient(JSONHTTPProvider):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> ProviderResponse:
-    payload = self._build_payload(messages, response_format)
+    payload = self._build_payload(messages, output_schema)
     url = self._build_request_url()
     data, headers = self._post_json(url, self.headers, payload)
 
@@ -65,7 +65,7 @@ class GeminiClient(JSONHTTPProvider):
   def _build_payload(
     self,
     messages: List[dict[str, str]],
-    response_format: ResponseFormat,
+    output_schema: dict[str, Any],
   ) -> Dict[str, Any]:
     contents: List[Dict[str, Any]] = []
     for message in messages:
@@ -102,7 +102,7 @@ class GeminiClient(JSONHTTPProvider):
     if generation_config:
       payload["generationConfig"] = generation_config
 
-    if response_format is ResponseFormat.JSON:
+    if output_schema:
       payload.setdefault("responseMimeType", "application/json")
 
     return payload
@@ -148,4 +148,3 @@ class GeminiClient(JSONHTTPProvider):
       )
 
     raise ProviderError(provider, message)
-

@@ -15,6 +15,12 @@ questionnaire:
         - id: "plan-choice"
           type: "choice"
           prompt: "Choose a plan."
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"

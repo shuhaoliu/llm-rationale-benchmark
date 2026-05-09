@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -33,6 +33,7 @@ class Question:
   prompt: str
   options: dict[str, str] | None
   scoring: ScoringRule
+  output_schema: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from .models import (
   ScoringRule,
   Section,
 )
+from .output_schema import build_full_output_schema
 from .schema import (
   QuestionnaireFileSchema,
   QuestionnaireSchema,
@@ -227,6 +229,13 @@ def _build_questions(
     seen_ids.add(question_schema.id)
     question_type = _coerce_question_type(question_schema.type, path, location)
     options = _validate_options(question_type, question_schema, path, location)
+    output_schema = _build_output_schema(
+      question_schema,
+      question_type,
+      options,
+      path,
+      location,
+    )
     scoring = _build_scoring(
       question_type,
       question_schema,
@@ -238,6 +247,7 @@ def _build_questions(
         id=question_schema.id,
         type=question_type,
         prompt=question_schema.prompt,
+        output_schema=output_schema,
         options=options,
         scoring=scoring,
       )
@@ -377,3 +387,108 @@ def _build_rating_weights(
     )
   normalized = {str(index + 1): value for index, value in enumerate(weights)}
   return normalized
+
+
+def _build_output_schema(
+  question_schema: QuestionSchema,
+  question_type: QuestionType,
+  options: dict[str, str] | None,
+  path: Path,
+  location: str,
+) -> dict[str, Any]:
+  raw_schema = question_schema.output_schema
+  properties = raw_schema.get("properties")
+  if not isinstance(properties, Mapping):
+    raise QuestionnaireConfigError(
+      "output_schema.properties must be a mapping",
+      file_path=str(path),
+      location=f"{location}.output_schema.properties",
+    )
+
+  answer_schema = properties.get("answer")
+  if not isinstance(answer_schema, Mapping):
+    raise QuestionnaireConfigError(
+      "output_schema.properties.answer must be a mapping",
+      file_path=str(path),
+      location=f"{location}.output_schema.properties.answer",
+    )
+
+  required = raw_schema.get("required")
+  if not isinstance(required, list) or "answer" not in required:
+    raise QuestionnaireConfigError(
+      "output_schema.required must include 'answer'",
+      file_path=str(path),
+      location=f"{location}.output_schema.required",
+    )
+
+  _validate_answer_schema(
+    question_schema.id,
+    question_type,
+    answer_schema,
+    options,
+    path,
+    location,
+  )
+
+  normalized = deepcopy(raw_schema)
+  normalized["properties"] = {
+    key: deepcopy(value)
+    for key, value in properties.items()
+  }
+  normalized["required"] = list(required)
+  return build_full_output_schema(question_schema.id, normalized)
+
+
+def _validate_answer_schema(
+  question_id: str,
+  question_type: QuestionType,
+  answer_schema: Mapping[str, Any],
+  options: dict[str, str] | None,
+  path: Path,
+  location: str,
+) -> None:
+  answer_type = answer_schema.get("type")
+  answer_location = f"{location}.output_schema.properties.answer"
+
+  if question_type is QuestionType.CHOICE:
+    if answer_type != "string":
+      raise QuestionnaireConfigError(
+        "Choice question output_schema answer type must be 'string'",
+        file_path=str(path),
+        location=f"{answer_location}.type",
+      )
+    enum_values = answer_schema.get("enum")
+    if not isinstance(enum_values, list):
+      raise QuestionnaireConfigError(
+        "Choice question output_schema answer must declare an enum list",
+        file_path=str(path),
+        location=f"{answer_location}.enum",
+      )
+    option_keys = list((options or {}).keys())
+    if enum_values != option_keys:
+      raise QuestionnaireConfigError(
+        "Choice question output_schema enum must match option keys exactly",
+        file_path=str(path),
+        location=f"{answer_location}.enum",
+      )
+    return
+
+  scale = question_type.rating_scale
+  if answer_type != "integer":
+    raise QuestionnaireConfigError(
+      "Rating question output_schema answer type must be 'integer'",
+      file_path=str(path),
+      location=f"{answer_location}.type",
+    )
+  if answer_schema.get("minimum") != 1:
+    raise QuestionnaireConfigError(
+      "Rating question output_schema minimum must be 1",
+      file_path=str(path),
+      location=f"{answer_location}.minimum",
+    )
+  if answer_schema.get("maximum") != scale:
+    raise QuestionnaireConfigError(
+      f"Rating question output_schema maximum must be {scale}",
+      file_path=str(path),
+      location=f"{answer_location}.maximum",
+    )

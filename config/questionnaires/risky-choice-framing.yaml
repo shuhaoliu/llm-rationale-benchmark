@@ -30,6 +30,12 @@ questionnaire:
             Imagine that 6 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 people will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 people will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -54,6 +60,12 @@ questionnaire:
             Imagine that 6 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 people will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 people will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -78,6 +90,12 @@ questionnaire:
             Imagine that 60 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 20 people will be saved.
             If Plan B is adopted, there is a one-third probability that all 60 people will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -102,6 +120,12 @@ questionnaire:
             Imagine that 60 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 40 people will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 60 people will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -126,6 +150,12 @@ questionnaire:
             Imagine that 600 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 200 people will be saved.
             If Plan B is adopted, there is a one-third probability that all 600 people will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -150,6 +180,12 @@ questionnaire:
             Imagine that 600 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 400 people will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 600 people will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -174,6 +210,12 @@ questionnaire:
             Imagine that 6000 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2000 people will be saved.
             If Plan B is adopted, there is a one-third probability that all 6000 people will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -198,6 +240,12 @@ questionnaire:
             Imagine that 6000 people are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4000 people will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6000 people will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -222,6 +270,12 @@ questionnaire:
             Imagine that 6 people in your family, including one of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 of them will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -246,6 +300,12 @@ questionnaire:
             Imagine that 6 people in your family, including one of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 of them will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -270,6 +330,12 @@ questionnaire:
             Imagine that 6 people in your family, including both of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 of them will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -294,6 +360,12 @@ questionnaire:
             Imagine that 6 people in your family, including both of your parents are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 of them will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -318,6 +390,12 @@ questionnaire:
             Imagine that 6 people in your family including your parents, and one of your brothers or sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 of them will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -342,6 +420,12 @@ questionnaire:
             Imagine that 6 people in your family including your parents, and one of your brothers or sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 of them will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -366,6 +450,12 @@ questionnaire:
             Imagine that 6 people in your family, including both of your parents, your brothers, and your sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 of them will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 of them will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -390,6 +480,12 @@ questionnaire:
             Imagine that 6 people in your family, including both of your parents, your brothers, and your sisters are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 of them will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 of them will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -414,6 +510,12 @@ questionnaire:
             Imagine that 6 billion humans are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 billion humans will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 billion humans will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -438,6 +540,12 @@ questionnaire:
             Imagine that 6 billion humans are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 billion humans will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 billion humans will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -462,6 +570,12 @@ questionnaire:
             Imagine that 6 billion aliens are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 2 billion aliens will be saved.
             If Plan B is adopted, there is a one-third probability that all 6 billion aliens will be saved and a two-thirds probability that none of them will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -486,6 +600,12 @@ questionnaire:
             Imagine that 6 billion aliens are infected by a fatal disease. Two alternative medical plans to treat the disease have been proposed. Assume that the exact scientific estimates of the consequences of the plans are as follows:
             If Plan A is adopted, 4 billion aliens will die.
             If Plan B is adopted, there is a one-third probability that none of them will die and a two-thirds probability that all 6 billion aliens will die.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -510,6 +630,12 @@ questionnaire:
             Imagine that 6 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 2 pieces will be saved from chemical pollution.
             If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -534,6 +660,12 @@ questionnaire:
             Imagine that 6 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 4 pieces will be destroyed by chemical pollution.
             If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -558,6 +690,12 @@ questionnaire:
             Imagine that 60 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 20 pieces will be saved from chemical pollution.
             If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -582,6 +720,12 @@ questionnaire:
             Imagine that 60 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 40 pieces will be destroyed by chemical pollution.
             If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -606,6 +750,12 @@ questionnaire:
             Imagine that 600 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 200 pieces will be saved from chemical pollution.
             If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -630,6 +780,12 @@ questionnaire:
             Imagine that 600 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 400 pieces will be destroyed by chemical pollution.
             If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -654,6 +810,12 @@ questionnaire:
             Imagine that 6000 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 2000 pieces will be saved from chemical pollution.
             If you choose Plan B, there is a one-third probability that all the paintings will be saved and a two-thirds probability that none of these paintings will be saved.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -678,6 +840,12 @@ questionnaire:
             Imagine that 6000 pieces of precious paintings in a world-famous museum are accidentally exposed to disastrous chemical pollution. Two alternative plans to rescue these art treasures have been proposed. Assumed that the exact estimates of the consequences of the plans made by scientists are as follows:
             If you choose Plan A, 4000 pieces will be destroyed by chemical pollution.
             If you choose Plan B, there is a one-third probability that none of these paintings will be destroyed and a two-thirds probability that all of these paintings will be destroyed.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -702,6 +870,12 @@ questionnaire:
             Imagine that you bought $6 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will save $2 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -726,6 +900,12 @@ questionnaire:
             Imagine that you bought $6 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will lose $4 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -750,6 +930,12 @@ questionnaire:
             Imagine that you bought $60 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will save $20 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -774,6 +960,12 @@ questionnaire:
             Imagine that you bought $60 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will lose $40 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -798,6 +990,12 @@ questionnaire:
             Imagine that you bought $600 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will save $200 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -822,6 +1020,12 @@ questionnaire:
             Imagine that you bought $600 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will lose $400 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -846,6 +1050,12 @@ questionnaire:
             Imagine that you bought $6000 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will save $2000 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a one-third probability of saving all your money and a two-thirds probability of saving none of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"
@@ -870,6 +1080,12 @@ questionnaire:
             Imagine that you bought $6000 worth of stock from a company that has just filed a claim for bankruptcy recently. The company now provides you with two plans to recover some of your money.
             If you choose Plan A, you will lose $4000 of your money.
             If you choose Plan B, you will take part in a random drawing procedure with exactly a two-thirds probability of losing all your money and a one-third probability of not losing any of your money.
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["A", "B"]
+            required: ["answer"]
           options:
             A: "Plan A"
             B: "Plan B"

@@ -15,6 +15,7 @@ class ProviderType(str, Enum):
 
   OPENAI = "openai"
   OPENAI_COMPATIBLE = "openai_compatible"
+  ALIYUN = "aliyun"
   ANTHROPIC = "anthropic"
   GEMINI = "gemini"
 

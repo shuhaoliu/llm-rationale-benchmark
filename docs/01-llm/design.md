@@ -16,9 +16,9 @@ Out of scope: UI integrations, persistence beyond in-memory transcripts, advance
 
 ## Architectural Overview
 - **Configuration Layer**  
-  Parses YAML files into a validated mapping of `LLMConnectorConfig` objects keyed by `"{provider}/{model_id}"`, resolving environment variable references and applying configured defaults for optional parameters such as timeout, retry policy, and output mode. Unset request-shaping fields such as `temperature` remain unset so provider defaults apply automatically.
+  Parses YAML files into a validated mapping of `LLMConnectorConfig` objects keyed by `"{provider}/{model_id}"`, resolving environment variable references and applying configured defaults for optional parameters such as timeout and retry policy. Structured output is always enabled by the connector layer rather than selected in configuration. Unset request-shaping fields such as `temperature` remain unset so provider defaults apply automatically.
 - **Factory Layer**  
-  `LLMConversationFactory` consumes a configuration mapping, a `"{provider}/{model_id}"` selector, and an optional system prompt, then produces a ready-to-use `LLMConversation` while wiring the appropriate provider adapter and enforcing response mode (JSON vs. free text).
+  `LLMConversationFactory` consumes a configuration mapping, a `"{provider}/{model_id}"` selector, and an optional system prompt, then produces a ready-to-use `LLMConversation` while wiring the appropriate provider adapter and enforcing structured output.
 - **Conversation Layer**  
   `LLMConversation` encapsulates the current transcript, request parameters, retry orchestration, and validation hook invocation.
 - **Provider Layer**  
@@ -29,15 +29,14 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
 ## Core Components
 
 ### Configuration Model
-- Configuration files declare shared values under `defaults` and provider-specific maps under `providers`. Each provider lists one or more entries in `models`, producing fully-qualified selectors of the form `"{provider}/{model_id}"`. Shared defaults (retry policy, response format, etc.) merge into every model unless overridden at the provider or per-model level.
+- Configuration files declare shared values under `defaults` and provider-specific maps under `providers`. Each provider lists one or more entries in `models`, producing fully-qualified selectors of the form `"{provider}/{model_id}"`. Shared defaults (retry policy, token limits, etc.) merge into every model unless overridden at the provider or per-model level.
   Shared defaults only apply when they are explicitly present in configuration.
 - `LLMConnectorConfig` (pydantic model) captures:
   - `provider`: enum (`openai`, `openai_compatible`, `anthropic`, `gemini`).
   - `endpoint`, `api_key`, `model`, `timeout_seconds`, `retry` (max attempts, backoff).
-  - `response_format`: enum (`json`, `text`) with `json` as default.
   - Optional fields: `temperature`, `top_p`, `max_tokens`, `metadata`, `provider_specific`. If `temperature` is omitted in configuration, connectors do not send a temperature parameter and the provider's own default is used.
   - `system_prompt` to seed conversation context; CLI may override.
-- Loader resolves YAML via `PyYAML`, expands `${ENV_VAR}` references, validates ranges (e.g., `0.0 <= temperature <= 2.0`) and required keys per provider before returning any configs. Invalid entries (malformed keys, unsupported provider/model tuples, or failing schema constraints) abort the load and raise `ConfigurationError` summarizing all offending settings.
+- Loader resolves YAML via `PyYAML`, expands `${ENV_VAR}` references, validates ranges (e.g., `0.0 <= temperature <= 2.0`) and required keys per provider before returning any configs. Invalid entries (malformed keys, unsupported provider/model tuples, forbidden response-format settings, or failing schema constraints) abort the load and raise `ConfigurationError` summarizing all offending settings.
 
 ### Factory
 - `LLMConversationFactory.create_from_config(path: Path, target_model: str, system_prompt: str | None) -> LLMConversation`.
@@ -46,7 +45,7 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
   2. Resolve `target_model`, which must be provided in `"{provider}/{model_id}"` format and match one of the validated entries; missing or mistyped identifiers raise `ConfigurationError`.
   3. Merge CLI-provided system prompt (falls back to config/system default).
   4. Instantiate provider adapter using `ProviderRegistry`.
-  5. Construct `LLMConversation` with initial system message, retry policy, and response mode derived from the selected model.
+  5. Construct `LLMConversation` with initial system message and retry policy derived from the selected model. Structured output remains mandatory for every request.
 - Supports caching of provider clients keyed by config hash to avoid redundant HTTP session creation when reusing configs.
 
 ### Conversation
@@ -54,10 +53,10 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
   - `config`: immutable connector settings.
   - `history`: list of `ConversationTurn` records (`role`, `content`, `timestamp`, optional `verification_errors`).
   - `state`: enum (`active`, `archived`).
-- `ask(question: str, validator: Callable[[LLMResponse], bool] | None = None, *, max_attempts: int | None = None) -> LLMResponse`
+- `ask(question: str, output_schema: dict[str, Any], validator: Callable[[LLMResponse], bool] | None = None, *, max_attempts: int | None = None) -> LLMResponse`
   - Validates active state; raises `ConversationArchivedError` if archived.
   - Appends user question to history before calling provider.
-  - Invokes provider adapter with full history, ensuring structured output instructions when `response_format == json` (e.g., OpenAI `response_format={"type": "json_object"}` or Anthropic tool use).
+  - Invokes provider adapter with full history and the caller-supplied output schema, ensuring provider-specific structured output controls are enabled (e.g., OpenAI JSON schema response formats or Anthropic tool use).
   - Detects reasoning-mode capabilities from the selected config; when a provider (e.g., Qwen3 reasoning variants) only supports streaming responses, `ask()` forces a streaming invocation and buffers emitted chunks into a single response before returning to the caller.
   - Executes retry loop (default from config, override via `max_attempts`) on transient errors (HTTP 5xx, timeouts) and failed `validator`. Retries add delay via exponential backoff (configurable jitter).
   - Captures each failed validation reason in turn metadata; surfaces `ValidationFailedError` after exhausting attempts without a valid response.
@@ -67,7 +66,7 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
   - Archive object provides `to_dict()` / `to_json()` helpers for persistence.
 
 ## Provider Integrations
-- `BaseProviderClient` defines async `generate(messages: list[Message], response_format: ResponseFormat) -> LLMResponse`.
+- `BaseProviderClient` defines async `generate(messages: list[Message], output_schema: dict[str, Any]) -> LLMResponse`.
 - Common behaviors:
   - Normalize messages to provider-specific structure (OpenAI chat, Anthropic Claude messages, Gemini content parts).
   - Translate standardized parameters (`temperature`, `top_p`, `max_tokens`).
@@ -75,7 +74,7 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
   - Auto-detect when a reasoning-capable model requires streaming, switching to streaming APIs and assembling a buffered response so downstream consumers can keep the non-streaming contract.
   - Surface `RateLimitError`, `AuthenticationError`, `ProviderError`.
 - Provider-specific notes:
-  - **OpenAI**: uses the official Responses API for non-compatible endpoints, supports function-level JSON output via `response_format={"type": "json_object"}`, and authenticates with bearer headers.
+  - **OpenAI**: uses the official Responses API for non-compatible endpoints, supports schema-constrained JSON output via native response-format controls, and authenticates with bearer headers.
   - **OpenAI-compatible**: same payload shape but configurable base URL and optional extra headers.
   - **Anthropic**: maps system prompt and conversation history to Claude message format; uses headers `x-api-key` and `anthropic-version`.
   - **Gemini**: handles streaming-to-buffer conversion; leverages generative language API; structured output via `jsonSchema` hints when supported.
@@ -91,19 +90,16 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
 - Validator failures: count toward retry budget; include validator message in turn metadata.
 - All errors captured via structured logging (`structlog`) with conversation id, provider, attempt number.
 
-## Structured vs. Unstructured Output
-- `response_format` controls guidance prompts and downstream parsing.
-- JSON mode:
-  - Injects explicit instructions in system prompt and provider-specific controls to enforce JSON schema.
-  - `validator` receives parsed Python object; parsing errors treated as validation failure.
-- Text mode:
-  - Returns raw strings; validator operates on text.
-  - Archive stores text payload and optionally derived metadata (e.g., parse attempt warnings).
+## Structured Output
+- The connector always requests structured output; free-form text mode is not supported.
+- Each call supplies an explicit output schema, typically sourced from the questionnaire question being asked.
+- The provider layer injects both generic instructions and provider-native schema controls to enforce that schema.
+- Parsed structured responses feed validators and downstream scoring; parsing failures are treated as validation failures and consume retry budget.
 
 ## Conversation Archiving and Persistence
 - Archive dataclass includes:
   - `config_snapshot`: sanitized copy of configuration (keys masked).
-  - `system_prompt`, `response_format`.
+  - `system_prompt`, requested `output_schema`.
   - `turns`: ordered list with question, answer, timestamps, number of retries.
   - `verification_summary`: counts of retries and validator failures.
 - Supports serialization hooks for benchmark runner to emit final JSON artifacts aligning with `docs/architecture.md` expectations.
@@ -122,7 +118,7 @@ The CLI resolves config paths, desired `provider/model` selector, and system pro
   - Streaming fallback buffering when a reasoning model refuses non-streaming responses.
 - Provider adapter tests (mocked HTTP):
   - Ensure payload shape per provider.
-  - Structured vs. text response handling.
+  - Structured output schema handling.
 - Integration smoke tests via `pytest-asyncio` with in-memory fake provider to assert transcript behavior.
 
 ## Observability and Instrumentation

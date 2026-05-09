@@ -52,6 +52,8 @@ questionnaire:
 - Keep prompts concise but explicit about tone, safety guidance, and answer format.
 - Use YAML block scalars (`|`) for multi-line prompts so line breaks are preserved.
 - Treat the prompt as required protocol wording shared by all models.
+- LLM connectors always use structured output, so question-level schemas, not
+  config-level response-format flags, define the exact response shape.
 
 ## 3. Add Sections
 Sections group related questions. Different sections are independent and may be
@@ -89,6 +91,13 @@ questions in that section as context.
         - id: "workload_01"
           type: "rating-5"
           prompt: "I feel overwhelmed by the number of tasks on my plate."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 5
+            required: ["answer"]
           scoring:
             total: 5
             weights: [0, 1, 3, 4, 5]
@@ -97,6 +106,9 @@ questions in that section as context.
 - `id` must be unique across the entire questionnaire.
 - Use consistent prefixes (`workload_XX`) to aid tracing.
 - `prompt` accepts plain text or simple Markdown.
+- `output_schema` is required for every question. It must describe the
+  structured response object expected from the LLM and must align with the
+  question type. At minimum, require an `answer` field.
 - `weights` is a list whose length matches the rating scale. Entry index `0`
   corresponds to rating `1`, index `1` to rating `2`, and so on.
 
@@ -105,6 +117,12 @@ questions in that section as context.
         - id: "workload_02"
           type: "choice"
           prompt: "Which statement best reflects your current workload?"
+          output_schema:
+            properties:
+              answer:
+                type: "string"
+                enum: ["low", "medium", "high"]
+            required: ["answer"]
           options:
             low: "Manageable with spare capacity"
             medium: "Challenging but sustainable"
@@ -118,6 +136,8 @@ questions in that section as context.
 ```
 
 - Provide `options` as key-to-label mapping.
+- Keep the `output_schema.properties.answer.enum` values in the same set and
+  spelling as the option keys.
 - Ensure `weights` covers every option key exactly once.
 
 ## 5. Scoring Guidelines
@@ -130,6 +150,7 @@ questions in that section as context.
 - Confirm the highest weight does not exceed `total`; validations enforce this.
 
 ## 6. Answer Validation Rules
+- The LLM response must first satisfy the question's `output_schema`.
 - `rating-*`: answers must be integers within the defined range. CLI clients
   will reject values outside the range before scoring.
 - `choice`: answers must use the canonical option keys (`low`, `medium`, etc.).
@@ -146,6 +167,13 @@ Repeat the section pattern for each thematic cluster. Example excerpt:
         - id: "recovery_01"
           type: "rating-7"
           prompt: "I can disconnect from work during personal time."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 7
+            required: ["answer"]
           scoring:
             total: 7
             weights: [0, 1, 2, 4, 5, 6, 7]
@@ -217,6 +245,7 @@ uv run rationale-benchmark \
 - [ ] All sections and questions have unique IDs.
 - [ ] Known section-level human baselines are recorded under `human.average`
       and `human.population`.
+- [ ] Every question defines an `output_schema` aligned with its answer type.
 - [ ] Every question defines `scoring.total` and `scoring.weights`.
 - [ ] Rating weight lists include exactly one entry per rating value.
 - [ ] Choice weights cover every option key.

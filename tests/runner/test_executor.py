@@ -17,6 +17,7 @@ from rationale_benchmark.llm.conversation import LLMConversation
 from rationale_benchmark.llm.exceptions import (
   ConfigurationError,
   LLMConnectorError,
+  ProviderError,
   TimeoutError,
 )
 from rationale_benchmark.llm.provider_client import BaseProviderClient, ProviderResponse
@@ -57,7 +58,7 @@ class RecordingProvider(BaseProviderClient):
     self,
     messages: list[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     self._requests.append(list(messages))
     content = self._responses[self._index]
@@ -76,9 +77,21 @@ class ErrorProvider(BaseProviderClient):
     self,
     messages: list[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     raise LLMConnectorError("provider failed after retries")
+
+
+class ProviderErrorProvider(BaseProviderClient):
+  """Provider raising a non-retryable provider error."""
+
+  def _generate(
+    self,
+    messages: list[dict[str, str]],
+    *,
+    output_schema,
+  ) -> ProviderResponse:
+    raise ProviderError(self.config.provider.value, "Model access denied.")
 
 
 class StubConversationFactory:
@@ -144,6 +157,29 @@ class ErrorConversationFactory:
     )
 
 
+class ProviderErrorConversationFactory:
+  """Factory creating conversations that hit a provider-side rejection."""
+
+  def create(
+    self,
+    model: str,
+    *,
+    system_prompt: str | None = None,
+  ) -> LLMConversation:
+    config = LLMConnectorConfig(
+      provider=ProviderType.OPENAI,
+      model=model,
+      api_key="test-key",
+      system_prompt=system_prompt,
+      response_format=ResponseFormat.JSON,
+    )
+    return LLMConversation(
+      config=config,
+      provider_client=ProviderErrorProvider(config),
+      system_prompt=system_prompt,
+    )
+
+
 class TimeoutThenSuccessProvider(BaseProviderClient):
   """Provider timing out once before returning a successful answer."""
 
@@ -155,7 +191,7 @@ class TimeoutThenSuccessProvider(BaseProviderClient):
     self,
     messages: list[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     self.calls += 1
     if self.calls == 1:
@@ -178,7 +214,7 @@ class AlwaysTimeoutProvider(BaseProviderClient):
     self,
     messages: list[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     self.calls += 1
     raise TimeoutError("The read operation timed out", timeout_seconds=30)
@@ -327,7 +363,7 @@ class BlockingProvider(BaseProviderClient):
     self,
     messages: list[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     if not self._first_request_started.is_set():
       self._first_request_started.set()
@@ -354,7 +390,7 @@ class AlwaysBlockingProvider(BaseProviderClient):
     self,
     messages: list[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     self._release_requests.wait(timeout=5)
     return ProviderResponse(
@@ -742,6 +778,30 @@ def test_runner_records_retry_count_when_timeouts_are_exhausted(
   assert question_error["retry_count"] == 2
 
 
+def test_runner_records_nonretryable_provider_errors(
+  tmp_path: Path,
+) -> None:
+  questionnaire = build_single_rating_questionnaire()
+  output_dir = tmp_path / "provider-error-output"
+  runner = BenchmarkRunner(
+    ProviderErrorConversationFactory(),
+    max_concurrency=1,
+  )
+
+  result = runner.run_sync(
+    questionnaire=questionnaire,
+    llm_ids=["openai/gpt-4"],
+    output_path=output_dir,
+  )
+
+  assert len(result.errors) == 1
+  assert result.errors[0].stage == "provider"
+  assert result.errors[0].message == "[openai] Model access denied."
+  record = read_jsonl(output_dir / "responses.jsonl")[0]
+  question_error = record["response"]["sections"][0]["questions"][0]["errors"][0]
+  assert question_error["stage"] == "provider"
+
+
 def test_runner_creates_records_for_each_llm_and_population() -> None:
   questionnaire = build_questionnaire(default_population=2)
   factory = StubConversationFactory(
@@ -800,15 +860,24 @@ def test_sections_start_clean_and_later_questions_keep_section_history() -> None
   requests = factory.requests_by_llm_id["openai/gpt-4"]
   assert len(requests) == 3
 
-  first_section_prompt_one = (
-    "Use first section instructions.\n\nFirst section question one."
+  first_section_prompt_one = requests[0][1]["content"]
+  first_section_prompt_two = next(
+    request[-1]["content"]
+    for request in requests
+    if "First section question two." in request[-1]["content"]
   )
-  first_section_prompt_two = (
-    "Use first section instructions.\n\nFirst section question two."
+  second_section_prompt_one = next(
+    request[1]["content"]
+    for request in requests
+    if "Second section question one." in request[1]["content"]
   )
-  second_section_prompt_one = (
-    "Use second section instructions.\n\nSecond section question one."
-  )
+
+  assert "Use first section instructions." in first_section_prompt_one
+  assert "First section question one." in first_section_prompt_one
+  assert "Respond with JSON that matches this schema exactly" in first_section_prompt_one
+  assert '"title": "first-1"' in first_section_prompt_one
+  assert "Use second section instructions." in second_section_prompt_one
+  assert '"title": "second-1"' in second_section_prompt_one
 
   request_signatures = [
     [(message["role"], message["content"]) for message in request]

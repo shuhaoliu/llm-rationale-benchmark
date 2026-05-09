@@ -23,30 +23,65 @@ questionnaire:
         - id: "risk_propencity_01"
           type: "rating-7"
           prompt: "Plan as if you will live forever."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 7
+            required: ["answer"]
           scoring:
             total: 7
             weights: [7, 6, 5, 4, 3, 2, 1]
         - id: "risk_propencity_02"
           type: "rating-7"
           prompt: "Live as if you will die today."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 7
+            required: ["answer"]
           scoring:
             total: 7
             weights: [1, 2, 3, 4, 5, 6, 7]
         - id: "risk_propencity_03"
           type: "rating-7"
           prompt: "Life is short; enjoy it while it lasts."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 7
+            required: ["answer"]
           scoring:
             total: 7
             weights: [1, 2, 3, 4, 5, 6, 7]
         - id: "risk_propencity_04"
           type: "rating-7"
           prompt: "It is wise to prepare for the future and a long, full life."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 7
+            required: ["answer"]
           scoring:
             total: 7
             weights: [7, 6, 5, 4, 3, 2, 1]
         - id: "risk_propencity_05"
           type: "rating-7"
           prompt: "I often think of things related to my death and death itself."
+          output_schema:
+            properties:
+              answer:
+                type: "integer"
+                minimum: 1
+                maximum: 7
+            required: ["answer"]
           scoring:
             total: 7
             weights: [1, 2, 3, 4, 5, 6, 7]

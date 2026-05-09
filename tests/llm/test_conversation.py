@@ -21,6 +21,20 @@ from rationale_benchmark.llm.exceptions import (
 )
 from rationale_benchmark.llm.provider_client import BaseProviderClient, ProviderResponse
 
+OUTPUT_SCHEMA = {
+  "type": "object",
+  "additionalProperties": False,
+  "properties": {
+    "answer": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+    }
+  },
+  "required": ["answer"],
+  "title": "rating_01",
+}
+
 
 def build_config(
   *,
@@ -54,7 +68,7 @@ class ToggleProvider(BaseProviderClient):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     response = self._responses[self.calls]
     self.calls += 1
@@ -76,7 +90,7 @@ class StreamingProvider(BaseProviderClient):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ) -> ProviderResponse:
     raise AssertionError("Non-streaming path should not be used")
 
@@ -84,7 +98,7 @@ class StreamingProvider(BaseProviderClient):
     self,
     messages: List[dict[str, str]],
     *,
-    response_format: ResponseFormat,
+    output_schema,
   ):
     self.calls += 1
     return list(self.chunks)
@@ -103,7 +117,7 @@ def test_json_parse_failure_retries_until_success():
     sleep_fn=lambda _delay: None,
   )
 
-  response = conversation.ask("Question?")
+  response = conversation.ask("Question?", OUTPUT_SCHEMA)
 
   assert response.parsed == {"value": 1}
   assert provider.calls == 2
@@ -116,7 +130,43 @@ def test_json_parse_failure_retries_until_success():
   assert archive.metadata["json_parse_failures"] == 1
 
   with pytest.raises(ConversationArchivedError):
-    conversation.ask("still there?")
+    conversation.ask("still there?", OUTPUT_SCHEMA)
+
+
+def test_aliyun_reasoning_response_parse_failure_retries_until_success():
+  config = LLMConnectorConfig(
+    provider=ProviderType.ALIYUN,
+    model="qwen3.6-plus",
+    api_key="dummy",
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    retry=RetryPolicy(
+      max_attempts=2,
+      initial_delay=0.01,
+      multiplier=1.0,
+      max_delay=0.01,
+      jitter=0.0,
+    ),
+  )
+  provider = ToggleProvider(
+    config,
+    responses=["not json", "{\"answer\": 4}"],
+  )
+  conversation = LLMConversation(
+    config=config,
+    provider_client=provider,
+    sleep_fn=lambda _delay: None,
+  )
+
+  response = conversation.ask("Question?", OUTPUT_SCHEMA)
+
+  assert response.parsed == {"answer": 4}
+  assert provider.calls == 2
+  assert conversation.history[-2].verification_errors == [
+    "json_parse_error: Expecting value"
+  ]
+
+  archive = conversation.archive()
+  assert archive.metadata["json_parse_failures"] == 1
 
 
 def test_retryable_provider_error_retries():
@@ -127,7 +177,7 @@ def test_retryable_provider_error_retries():
       super().__init__(config)
       self.calls = 0
 
-    def _generate(self, messages, *, response_format):
+    def _generate(self, messages, *, output_schema):
       self.calls += 1
       if self.calls == 1:
         raise RetryableProviderError(
@@ -142,7 +192,7 @@ def test_retryable_provider_error_retries():
     sleep_fn=lambda _delay: None,
   )
 
-  response = conversation.ask("hello")
+  response = conversation.ask("hello", OUTPUT_SCHEMA)
   assert response.parsed == {"ok": True}
   assert provider.calls == 2
 
@@ -162,7 +212,7 @@ def test_timeout_error_retries_until_success():
     sleep_fn=lambda _delay: None,
   )
 
-  response = conversation.ask("hello")
+  response = conversation.ask("hello", OUTPUT_SCHEMA)
 
   assert response.parsed == {"ok": True}
   assert provider.calls == 2
@@ -184,7 +234,7 @@ def test_validator_failure_raises_after_retries():
     return response.parsed.get("value") == 3
 
   with pytest.raises(ValidationFailedError) as exc:
-    conversation.ask("check", validator=validator)
+    conversation.ask("check", OUTPUT_SCHEMA, validator=validator)
 
   assert "Validator rejected response" in str(exc.value)
   assert provider.calls == 2
@@ -195,13 +245,14 @@ def test_streaming_provider_buffers_chunks():
     response_format=ResponseFormat.TEXT,
     requires_streaming=True,
   )
-  provider = StreamingProvider(config, chunks=["Hello", " ", "world"])
+  provider = StreamingProvider(config, chunks=['{"answer":', " 5", "}"])
   conversation = LLMConversation(
     config=config,
     provider_client=provider,
     sleep_fn=lambda _delay: None,
   )
 
-  response = conversation.ask("compose")
-  assert response.text == "Hello world"
+  response = conversation.ask("compose", OUTPUT_SCHEMA)
+  assert response.text == '{"answer": 5}'
+  assert response.parsed == {"answer": 5}
   assert provider.calls == 1

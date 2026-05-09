@@ -121,6 +121,7 @@ class LLMConversation:
   def ask(
     self,
     question: str,
+    output_schema: dict[str, Any],
     validator: Optional[ValidatorFn] = None,
     *,
     max_attempts: Optional[int] = None,
@@ -148,7 +149,7 @@ class LLMConversation:
       self._stats["provider_attempts"] += 1
 
       try:
-        response = self._invoke_provider()
+        response = self._invoke_provider(output_schema)
       except RetryableProviderError as exc:
         last_error = exc
         self._stats["retryable_errors"] += 1
@@ -247,7 +248,7 @@ class LLMConversation:
 
     return self._stats["provider_attempts"]
 
-  def _invoke_provider(self) -> ProviderResponse:
+  def _invoke_provider(self, output_schema: dict[str, Any]) -> ProviderResponse:
     messages = [
       {
         "role": turn.role,
@@ -265,20 +266,17 @@ class LLMConversation:
     try:
       return self.provider_client.generate(
         messages,
-        response_format=self.config.response_format,
+        output_schema=output_schema,
         stream=use_streaming,
       )
     except StreamingNotSupportedError as exc:  # pragma: no cover - guard rail
       raise LLMConnectorError(str(exc)) from exc
 
   def _parse_response(self, response: ProviderResponse) -> tuple[Any, Optional[str]]:
-    if self.config.response_format == ResponseFormat.JSON:
-      try:
-        return json.loads(response.content), None
-      except json.JSONDecodeError as exc:
-        return None, f"json_parse_error: {exc.msg}"
-
-    return response.content, None
+    try:
+      return json.loads(response.content), None
+    except json.JSONDecodeError as exc:
+      return None, f"json_parse_error: {exc.msg}"
 
   def _sleep_for_attempt(
     self, attempt: int, *, retry_after: Optional[int] = None
