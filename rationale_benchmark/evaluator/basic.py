@@ -6,7 +6,7 @@ import json
 import math
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,6 @@ from rationale_benchmark.questionnaire import (
   Question,
   Questionnaire,
   QuestionnaireConfigError,
-  QuestionScore,
   QuestionType,
   score_question,
   validate_answer,
@@ -54,15 +53,48 @@ class HumanComparison:
 
 
 @dataclass(frozen=True)
+class QuestionResponseAnalysis:
+  """Aggregated response stats for one canonical question option."""
+
+  option: str
+  count: int
+  percentage: float
+  delta: float | None
+
+
+@dataclass(frozen=True)
+class QuestionAnalysis:
+  """Aggregated response stats for one questionnaire question."""
+
+  questionnaire_id: str
+  section_name: str
+  question_id: str
+  question_prompt: str
+  population: int
+  responses: list[QuestionResponseAnalysis]
+
+
+@dataclass(frozen=True)
 class EvaluationResult:
   """Result produced by the basic evaluator."""
 
   questionnaire_id: str
   output_dir: Path
+  question_analysis_json: Path
   section_scores_pdf: Path
   section_delta_pdf: Path
+  question_analyses: list[QuestionAnalysis]
   model_section_means: dict[tuple[str, str], SectionMean]
   human_comparisons: dict[tuple[str, str], HumanComparison]
+
+
+@dataclass(frozen=True)
+class _ScoredQuestion:
+  question_id: str
+  question_prompt: str
+  answer_token: str
+  awarded: int
+  total: int
 
 
 @dataclass(frozen=True)
@@ -72,7 +104,7 @@ class _RecordSectionScore:
   section_name: str
   awarded: int
   total: int
-  questions: list[QuestionScore]
+  questions: list[_ScoredQuestion]
 
 
 def evaluate_basic(
@@ -107,9 +139,12 @@ def evaluate_basic(
     model_section_means,
     questionnaire,
   )
+  question_analyses = _aggregate_question_analyses(section_scores, questionnaire)
 
+  question_analysis_json = output_dir / "question-analysis.json"
   section_scores_pdf = output_dir / "section-scores.pdf"
   section_delta_pdf = output_dir / "section-delta.pdf"
+  _write_question_analysis_json(question_analysis_json, question_analyses)
   _write_section_scores_chart(
     section_scores_pdf,
     questionnaire,
@@ -123,8 +158,10 @@ def evaluate_basic(
   return EvaluationResult(
     questionnaire_id=questionnaire.id,
     output_dir=output_dir,
+    question_analysis_json=question_analysis_json,
     section_scores_pdf=section_scores_pdf,
     section_delta_pdf=section_delta_pdf,
+    question_analyses=question_analyses,
     model_section_means=model_section_means,
     human_comparisons=human_comparisons,
   )
@@ -254,7 +291,7 @@ def _score_question_payload(
   question_payload: Any,
   question_map: dict[str, Any],
   errored_questions: set[tuple[str, str]],
-) -> QuestionScore | None:
+) -> _ScoredQuestion | None:
   if not isinstance(question_payload, dict):
     raise EvaluatorError(f"Record {record_index} contains malformed question")
   question_id = question_payload.get("id")
@@ -284,7 +321,14 @@ def _score_question_payload(
   try:
     answer = _canonicalize_choice_answer(question, answer)
     token = validate_answer(question, answer)
-    return score_question(question, token)
+    score = score_question(question, token)
+    return _ScoredQuestion(
+      question_id=score.question_id,
+      question_prompt=question.prompt,
+      answer_token=token,
+      awarded=score.awarded,
+      total=score.total,
+    )
   except (AnswerValidationError, QuestionnaireConfigError) as exc:
     raise EvaluatorError(
       f"Answer for question '{question_id}' cannot be validated: {exc}"
@@ -426,6 +470,71 @@ def _compare_human_baselines(
       absolute_delta=abs(delta),
     )
   return comparisons
+
+
+def _aggregate_question_analyses(
+  section_scores: list[_RecordSectionScore],
+  questionnaire: Questionnaire,
+) -> list[QuestionAnalysis]:
+  counts_by_question: dict[tuple[str, str], dict[str, int]] = defaultdict(
+    lambda: defaultdict(int)
+  )
+  populations_by_question: dict[tuple[str, str], int] = defaultdict(int)
+
+  for section_score in section_scores:
+    for question_score in section_score.questions:
+      key = (section_score.section_name, question_score.question_id)
+      counts_by_question[key][question_score.answer_token] += 1
+      populations_by_question[key] += 1
+
+  analyses: list[QuestionAnalysis] = []
+  for section in questionnaire.sections:
+    for question in section.questions:
+      key = (section.name, question.id)
+      population = populations_by_question.get(key, 0)
+      counts = counts_by_question.get(key, {})
+      responses = [
+        QuestionResponseAnalysis(
+          option=option,
+          count=counts.get(option, 0),
+          percentage=_response_percentage(counts.get(option, 0), population),
+          delta=None,
+        )
+        for option in _question_options(question)
+      ]
+      analyses.append(
+        QuestionAnalysis(
+          questionnaire_id=questionnaire.id,
+          section_name=section.name,
+          question_id=question.id,
+          question_prompt=question.prompt,
+          population=population,
+          responses=responses,
+        )
+      )
+  return analyses
+
+
+def _question_options(question: Question) -> list[str]:
+  if question.type is QuestionType.CHOICE:
+    assert question.options is not None
+    return list(question.options)
+  assert question.type.rating_scale is not None
+  return [str(index) for index in range(1, question.type.rating_scale + 1)]
+
+
+def _response_percentage(count: int, population: int) -> float:
+  if population == 0:
+    return 0.0
+  return count / population
+
+
+def _write_question_analysis_json(
+  path: Path,
+  question_analyses: list[QuestionAnalysis],
+) -> None:
+  payload = [asdict(question_analysis) for question_analysis in question_analyses]
+  path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def _write_section_scores_chart(

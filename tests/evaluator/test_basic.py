@@ -188,6 +188,124 @@ def test_evaluate_basic_accepts_choice_option_labels(tmp_path: Path) -> None:
   assert result.model_section_means[("openai/gpt-4", "Plans")].mean == 1.0
 
 
+def test_evaluate_basic_writes_question_analysis_json(tmp_path: Path) -> None:
+  output_dir = tmp_path / "question-analysis"
+  write_runner_output(
+    output_dir,
+    [
+      record(llm_id="openai/gpt-4", population_index=0),
+      record(
+        llm_id="openai/gpt-4",
+        population_index=1,
+        sections=[
+          {
+            "id": "Risk",
+            "questions": [
+              {
+                "id": "risk-rating",
+                "response": "3",
+                "errors": [],
+              },
+              {
+                "id": "risk-choice",
+                "response": "low",
+                "errors": [],
+              },
+            ],
+          },
+          {
+            "id": "Trust",
+            "questions": [
+              {
+                "id": "trust-rating",
+                "response": "3",
+                "errors": [],
+              },
+            ],
+          },
+        ],
+      ),
+      record(llm_id="anthropic/claude", population_index=0),
+    ],
+  )
+
+  result = evaluate_basic(output_dir, config_dir=FIXTURE_CONFIG_DIR)
+  payload = json.loads(result.question_analysis_json.read_text(encoding="utf-8"))
+
+  assert result.question_analysis_json == output_dir / "question-analysis.json"
+  assert payload == [
+    {
+      "questionnaire_id": "evaluator-fixture",
+      "section_name": "Risk",
+      "question_id": "risk-rating",
+      "question_prompt": "Rate the risk.",
+      "population": 3,
+      "responses": [
+        {"option": "1", "count": 0, "percentage": 0.0, "delta": None},
+        {"option": "2", "count": 0, "percentage": 0.0, "delta": None},
+        {
+          "option": "3",
+          "count": 1,
+          "percentage": pytest.approx(1 / 3),
+          "delta": None,
+        },
+        {"option": "4", "count": 0, "percentage": 0.0, "delta": None},
+        {
+          "option": "5",
+          "count": 2,
+          "percentage": pytest.approx(2 / 3),
+          "delta": None,
+        },
+      ],
+    },
+    {
+      "questionnaire_id": "evaluator-fixture",
+      "section_name": "Risk",
+      "question_id": "risk-choice",
+      "question_prompt": "Choose a risk option.",
+      "population": 3,
+      "responses": [
+        {
+          "option": "low",
+          "count": 1,
+          "percentage": pytest.approx(1 / 3),
+          "delta": None,
+        },
+        {
+          "option": "high",
+          "count": 2,
+          "percentage": pytest.approx(2 / 3),
+          "delta": None,
+        },
+      ],
+    },
+    {
+      "questionnaire_id": "evaluator-fixture",
+      "section_name": "Trust",
+      "question_id": "trust-rating",
+      "question_prompt": "Rate trust.",
+      "population": 3,
+      "responses": [
+        {
+          "option": "1",
+          "count": 2,
+          "percentage": pytest.approx(2 / 3),
+          "delta": None,
+        },
+        {"option": "2", "count": 0, "percentage": 0.0, "delta": None},
+        {
+          "option": "3",
+          "count": 1,
+          "percentage": pytest.approx(1 / 3),
+          "delta": None,
+        },
+        {"option": "4", "count": 0, "percentage": 0.0, "delta": None},
+        {"option": "5", "count": 0, "percentage": 0.0, "delta": None},
+      ],
+    },
+  ]
+
+
 def test_evaluate_basic_writes_non_empty_pdf_charts(tmp_path: Path) -> None:
   output_dir = tmp_path / "chart-output"
   write_runner_output(output_dir, [record()])

@@ -4,6 +4,8 @@ from .basic import (
   EvaluationResult,
   EvaluatorError,
   HumanComparison,
+  QuestionAnalysis,
+  QuestionResponseAnalysis,
   SectionMean,
   evaluate_basic,
 )
@@ -12,6 +14,8 @@ __all__ = [
   "EvaluationResult",
   "EvaluatorError",
   "HumanComparison",
+  "QuestionAnalysis",
+  "QuestionResponseAnalysis",
   "SectionMean",
   "evaluate_basic",
 ]

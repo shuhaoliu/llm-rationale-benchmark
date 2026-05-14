@@ -24,6 +24,7 @@ def main() -> int:
     print(f"error: {exc}", file=sys.stderr)
     return 1
 
+  print(f"Wrote {result.question_analysis_json}")
   print(f"Wrote {result.section_scores_pdf}")
   print(f"Wrote {result.section_delta_pdf}")
   return 0
